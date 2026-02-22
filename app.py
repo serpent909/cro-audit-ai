@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -108,10 +109,23 @@ def extract_from_single_page(page_url: str, headers: dict):
         for a in full.find_all("a"):
             txt = a.get_text(" ", strip=True)
             href = (a.get("href") or "").strip()
-            if txt and any(k in txt.lower() for k in [
-                "book", "demo", "start", "get", "try", "sign", "contact",
-                "pricing", "plans", "buy", "join", "trial"
-            ]):
+            if txt and any(
+                k in txt.lower()
+                for k in [
+                    "book",
+                    "demo",
+                    "start",
+                    "get",
+                    "try",
+                    "sign",
+                    "contact",
+                    "pricing",
+                    "plans",
+                    "buy",
+                    "join",
+                    "trial",
+                ]
+            ):
                 ctas.append(f"LINK: {txt} -> {href}")
 
         ctas = list(dict.fromkeys(ctas))[:40]
@@ -155,7 +169,7 @@ def run_ai_text(text: str):
     client = OpenAI()
     response = client.responses.create(
         model=MODEL_TEXT,
-        input=f"{PROMPT}\n\n{text[:MAX_CHARS]}"
+        input=f"{PROMPT}\n\n{text[:MAX_CHARS]}",
     )
     return response.output_text
 
@@ -163,26 +177,33 @@ def run_ai_text(text: str):
 def run_ai_vision(text_context, image_data_urls, pages):
     client = OpenAI()
 
-    content = [{
-        "type": "input_text",
-        "text": f"{PROMPT}\n\nCaptured pages:\n" + "\n".join(f"- {p}" for p in pages)
-    }]
+    content = [
+        {
+            "type": "input_text",
+            "text": f"{PROMPT}\n\nCaptured pages:\n"
+            + "\n".join(f"- {p}" for p in pages),
+        }
+    ]
 
     if text_context:
-        content.append({
-            "type": "input_text",
-            "text": f"\n\nText context:\n{text_context[:MAX_CHARS]}"
-        })
+        content.append(
+            {
+                "type": "input_text",
+                "text": f"\n\nText context:\n{text_context[:MAX_CHARS]}",
+            }
+        )
 
     for img in image_data_urls:
-        content.append({
-            "type": "input_image",
-            "image_url": img
-        })
+        content.append(
+            {
+                "type": "input_image",
+                "image_url": img,
+            }
+        )
 
     response = client.responses.create(
         model=MODEL_VISION,
-        input=[{"role": "user", "content": content}]
+        input=[{"role": "user", "content": content}],
     )
 
     return response.output_text
@@ -190,20 +211,63 @@ def run_ai_vision(text_context, image_data_urls, pages):
 
 def take_auto_screenshots(url: str):
     """
-    Runs capture.py using the SAME python executable as this Streamlit app (.venv),
+    Runs capture.py using the SAME python executable as this Streamlit app,
     so capture.py can import playwright.
+
+    Returns: (images, pages, debug_dict)
     """
+    cmd = [sys.executable, "capture.py", url, str(MAX_IMAGES)]
+
     result = subprocess.run(
-        [sys.executable, "capture.py", url, str(MAX_IMAGES)],
+        cmd,
         capture_output=True,
-        text=True
+        text=True,
+        timeout=120,  # prevent hangs
     )
 
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "capture.py failed with no stderr output")
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
 
-    data = json.loads(result.stdout)
-    return data.get("images", []), data.get("pages", [])
+    debug = {
+        "cmd": " ".join(cmd),
+        "python": sys.executable,
+        "returncode": result.returncode,
+        "stdout_preview": stdout[:2000],
+        "stderr_preview": stderr[:2000],
+    }
+
+    # Non-zero exit => show stderr + stdout previews
+    if result.returncode != 0:
+        raise RuntimeError(
+            "capture.py failed\n"
+            f"returncode: {result.returncode}\n\n"
+            f"stderr (first 2000 chars):\n{debug['stderr_preview']}\n\n"
+            f"stdout (first 2000 chars):\n{debug['stdout_preview']}"
+        )
+
+    # Must be valid JSON
+    try:
+        data = json.loads(stdout)
+    except Exception as e:
+        raise RuntimeError(
+            "capture.py did not return valid JSON.\n"
+            f"JSON error: {e}\n\n"
+            f"stdout (first 2000 chars):\n{debug['stdout_preview']}\n\n"
+            f"stderr (first 2000 chars):\n{debug['stderr_preview']}"
+        )
+
+    # If capture.py returns a structured error payload, bubble it up
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(
+            "capture.py returned an error payload:\n"
+            f"{data.get('error')}\n\n"
+            f"stderr (first 2000 chars):\n{debug['stderr_preview']}"
+        )
+
+    images = data.get("images", []) if isinstance(data, dict) else []
+    pages = data.get("pages", []) if isinstance(data, dict) else []
+
+    return images, pages, debug
 
 
 # ----------------------------
@@ -251,7 +315,9 @@ with tab2:
 # --- VISION ---
 with tab3:
     vurl = st.text_input("Website URL for screenshots", key="vision_url")
-    include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
+    include_text = st.checkbox(
+        "Include text context", value=True, key="vision_include_text"
+    )
 
     if st.button("Run Vision Audit", key="run_vision", type="primary"):
         if not vurl or not is_valid_url(vurl):
@@ -260,13 +326,19 @@ with tab3:
 
         with st.spinner("Capturing screenshots (auto)..."):
             try:
-                images, pages = take_auto_screenshots(vurl)
+                images, pages, debug = take_auto_screenshots(vurl)
             except Exception as e:
                 st.error(f"Screenshot failed: {e}")
                 st.stop()
 
+        # Always show debug info once screenshots step completes
+        with st.expander("Debug (capture.py)"):
+            st.json(debug)
+
         if not images:
-            st.error("No screenshots captured. The site may block headless browsing.")
+            st.error(
+                "No screenshots captured. The site may block headless browsing, or capture.py failed silently."
+            )
             st.stop()
 
         text_context = ""

@@ -27,35 +27,65 @@ def png_bytes_to_jpeg_data_url(png_bytes: bytes) -> str:
     return f"data:image/jpeg;base64,{b64}"
 
 
-def ensure_playwright_chromium_installed() -> None:
+def _install_chromium() -> None:
     """
-    Ensure Playwright's Chromium exists. Keep stdout clean (JSON only)
-    by sending installer output to stderr.
+    Install Playwright Chromium. Keep stdout clean (JSON only) by sending logs to stderr.
     """
-    os.environ.setdefault(
-        "PLAYWRIGHT_BROWSERS_PATH",
-        str(Path.home() / ".cache" / "ms-playwright")
-    )
-    cache_root = Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"])
-    cache_root.mkdir(parents=True, exist_ok=True)
+    # Streamlit Cloud friendly cache path
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / ".cache" / "ms-playwright"))
+    Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).mkdir(parents=True, exist_ok=True)
 
-    # If anything exists in the cache, assume installed
-    try:
-        if any(cache_root.iterdir()):
-            return
-    except Exception:
-        pass
-
-    # Install chromium; send logs to stderr
-    subprocess.check_call(
+    # Send installer output to stderr (avoid polluting stdout)
+    # Using run() instead of check_call() gives us better control.
+    proc = subprocess.run(
         [sys.executable, "-m", "playwright", "install", "chromium"],
-        stdout=sys.stderr,
-        stderr=sys.stderr,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
+    if proc.stdout:
+        print(proc.stdout, file=sys.stderr)
+    if proc.returncode != 0:
+        raise RuntimeError(f"playwright install chromium failed (exit {proc.returncode})")
+
+
+def _try_launch_browser(pw):
+    """
+    Attempt to launch Chromium. If missing, install and retry once.
+    """
+    try:
+        return pw.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
+    except Exception as e:
+        # Common Streamlit Cloud error: Executable doesn't exist...
+        msg = str(e).lower()
+        if "executable" in msg and ("doesn't exist" in msg or "not found" in msg):
+            print("[capture.py] Chromium missing. Installing...", file=sys.stderr)
+            _install_chromium()
+            # Retry after install
+            return pw.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                ],
+            )
+        # Anything else: re-raise
+        raise
 
 
 def main():
     # args: url, max_images
+    if len(sys.argv) < 2:
+        return {"pages": [], "images": [], "error": "No URL argument provided to capture.py"}
+
     url = sys.argv[1]
     max_images = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 
@@ -63,7 +93,7 @@ def main():
     paths = ["", "/pricing", "/plans", "/compare", "/pricing/"]
     pages = [base_url + p for p in paths]
 
-    # de-dupe
+    # de-dupe (preserve order)
     seen = set()
     pages_unique = []
     for p in pages:
@@ -74,17 +104,9 @@ def main():
     image_data_urls = []
     pages_captured = []
 
-    ensure_playwright_chromium_installed()
-
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-            ],
-        )
+        browser = _try_launch_browser(pw)
+
         context = browser.new_context(
             viewport=VIEWPORT,
             user_agent=(
@@ -103,7 +125,9 @@ def main():
                 png_bytes = page.screenshot(full_page=True, type="png")
                 image_data_urls.append(png_bytes_to_jpeg_data_url(png_bytes))
                 pages_captured.append(page_url)
-            except Exception:
+            except Exception as e:
+                # log failures to stderr only (stdout must remain JSON)
+                print(f"[capture.py] Failed page: {page_url} :: {e}", file=sys.stderr)
                 continue
 
         context.close()
@@ -113,12 +137,13 @@ def main():
 
 
 if __name__ == "__main__":
-    # Always emit valid JSON to stdout (even if something fails)
+    # Always emit valid JSON to stdout, and keep stdout JSON-only.
     try:
         payload = main()
         print(json.dumps(payload))
+        sys.exit(0)
     except Exception as e:
-        # Keep stdout valid JSON; details to stderr
         print(json.dumps({"pages": [], "images": [], "error": str(e)}))
         print(f"[capture.py] ERROR: {e}", file=sys.stderr)
-        raise
+        # Exit 0 so app.py can parse JSON and show structured error nicely
+        sys.exit(0)
