@@ -29,24 +29,29 @@ def png_bytes_to_jpeg_data_url(png_bytes: bytes) -> str:
 
 def ensure_playwright_chromium_installed() -> None:
     """
-    Streamlit Cloud often doesn't run postBuild. This installs Chromium at runtime
-    (first run) into a writable cache location.
+    Ensure Playwright's Chromium exists. Keep stdout clean (JSON only)
+    by sending installer output to stderr.
     """
-    # Ensure Playwright uses a writable browser cache directory
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / ".cache" / "ms-playwright"))
-
+    os.environ.setdefault(
+        "PLAYWRIGHT_BROWSERS_PATH",
+        str(Path.home() / ".cache" / "ms-playwright")
+    )
     cache_root = Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"])
+    cache_root.mkdir(parents=True, exist_ok=True)
 
-    # If cache exists and has content, assume browsers are installed
-    if cache_root.exists():
-        try:
-            if any(cache_root.iterdir()):
-                return
-        except Exception:
-            pass
+    # If anything exists in the cache, assume installed
+    try:
+        if any(cache_root.iterdir()):
+            return
+    except Exception:
+        pass
 
-    # Install chromium (download browser binaries)
-    subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+    # Install chromium; send logs to stderr
+    subprocess.check_call(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+    )
 
 
 def main():
@@ -69,7 +74,6 @@ def main():
     image_data_urls = []
     pages_captured = []
 
-    # ✅ Ensure chromium is present in Streamlit Cloud
     ensure_playwright_chromium_installed()
 
     with sync_playwright() as pw:
@@ -83,7 +87,10 @@ def main():
         )
         context = browser.new_context(
             viewport=VIEWPORT,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+            ),
         )
         page = context.new_page()
 
@@ -102,8 +109,16 @@ def main():
         context.close()
         browser.close()
 
-    print(json.dumps({"pages": pages_captured, "images": image_data_urls}))
+    return {"pages": pages_captured, "images": image_data_urls}
 
 
 if __name__ == "__main__":
-    main()
+    # Always emit valid JSON to stdout (even if something fails)
+    try:
+        payload = main()
+        print(json.dumps(payload))
+    except Exception as e:
+        # Keep stdout valid JSON; details to stderr
+        print(json.dumps({"pages": [], "images": [], "error": str(e)}))
+        print(f"[capture.py] ERROR: {e}", file=sys.stderr)
+        raise
