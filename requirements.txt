@@ -1,0 +1,8 @@
+streamlit
+openai
+requests
+beautifulsoup4
+readability-lxml
+lxml
+pillow
+playwright
