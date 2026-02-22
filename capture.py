@@ -3,6 +3,10 @@ import sys
 import json
 import base64
 import io
+import os
+import subprocess
+from pathlib import Path
+
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
@@ -23,6 +27,28 @@ def png_bytes_to_jpeg_data_url(png_bytes: bytes) -> str:
     return f"data:image/jpeg;base64,{b64}"
 
 
+def ensure_playwright_chromium_installed() -> None:
+    """
+    Streamlit Cloud often doesn't run postBuild. This installs Chromium at runtime
+    (first run) into a writable cache location.
+    """
+    # Ensure Playwright uses a writable browser cache directory
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / ".cache" / "ms-playwright"))
+
+    cache_root = Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"])
+
+    # If cache exists and has content, assume browsers are installed
+    if cache_root.exists():
+        try:
+            if any(cache_root.iterdir()):
+                return
+        except Exception:
+            pass
+
+    # Install chromium (download browser binaries)
+    subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+
+
 def main():
     # args: url, max_images
     url = sys.argv[1]
@@ -30,9 +56,7 @@ def main():
 
     base_url = url.rstrip("/")
     paths = ["", "/pricing", "/plans", "/compare", "/pricing/"]
-    pages = []
-    for p in paths:
-        pages.append(base_url + p)
+    pages = [base_url + p for p in paths]
 
     # de-dupe
     seen = set()
@@ -45,11 +69,21 @@ def main():
     image_data_urls = []
     pages_captured = []
 
+    # ✅ Ensure chromium is present in Streamlit Cloud
+    ensure_playwright_chromium_installed()
+
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
         context = browser.new_context(
             viewport=VIEWPORT,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
         )
         page = context.new_page()
 
@@ -68,10 +102,7 @@ def main():
         context.close()
         browser.close()
 
-    print(json.dumps({
-        "pages": pages_captured,
-        "images": image_data_urls
-    }))
+    print(json.dumps({"pages": pages_captured, "images": image_data_urls}))
 
 
 if __name__ == "__main__":
