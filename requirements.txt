@@ -6,3 +6,4 @@ readability-lxml
 lxml
 pillow
 playwright
+python-dotenv
