@@ -4,16 +4,29 @@ import json
 import base64
 import io
 import os
+import re
 import subprocess
+import time
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
 
-MAX_IMAGE_WIDTH = 1400
-QUALITY = 85
-VIEWPORT = {"width": 1440, "height": 900}
-NAV_TIMEOUT_MS = 45000
+# --- Screenshot tuning (Step 3) ---
+MAX_IMAGE_WIDTH = 900          # reduce width ~900
+QUALITY = 75                   # JPEG quality ~70–80
+VIEWPORT = {"width": 1200, "height": 900}
+
+# --- Navigation robustness ---
+NAV_TIMEOUT_MS = 25000
+POST_GOTO_PAUSE_MS = 900
+
+PRICING_HINTS = [
+    "pricing", "plans", "plan", "subscriptions", "subscription", "billing",
+    "upgrade", "tiers", "compare", "buy", "checkout", "purchase"
+]
+DEBOOST_HINTS = ["blog", "docs", "help", "support", "changelog", "status", "careers", "jobs"]
 
 
 def png_bytes_to_jpeg_data_url(png_bytes: bytes) -> str:
@@ -31,12 +44,9 @@ def _install_chromium() -> None:
     """
     Install Playwright Chromium. Keep stdout clean (JSON only) by sending logs to stderr.
     """
-    # Streamlit Cloud friendly cache path
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / ".cache" / "ms-playwright"))
     Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).mkdir(parents=True, exist_ok=True)
 
-    # Send installer output to stderr (avoid polluting stdout)
-    # Using run() instead of check_call() gives us better control.
     proc = subprocess.run(
         [sys.executable, "-m", "playwright", "install", "chromium"],
         stdout=subprocess.PIPE,
@@ -56,57 +66,185 @@ def _try_launch_browser(pw):
     try:
         return pw.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-            ],
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         )
     except Exception as e:
-        # Common Streamlit Cloud error: Executable doesn't exist...
         msg = str(e).lower()
         if "executable" in msg and ("doesn't exist" in msg or "not found" in msg):
             print("[capture.py] Chromium missing. Installing...", file=sys.stderr)
             _install_chromium()
-            # Retry after install
             return pw.chromium.launch(
                 headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
             )
-        # Anything else: re-raise
         raise
 
 
-def main():
-    # args: url, max_images
-    if len(sys.argv) < 2:
-        return {"pages": [], "images": [], "error": "No URL argument provided to capture.py"}
+def _norm_url(u: str) -> str:
+    u = (u or "").strip()
+    if not u:
+        return u
+    if not re.match(r"^https?://", u, re.I):
+        u = "https://" + u
+    p = urlparse(u)
+    return p._replace(fragment="").geturl()
 
-    url = sys.argv[1]
+
+def _same_site(a: str, b: str) -> bool:
+    try:
+        return urlparse(a).netloc.lower() == urlparse(b).netloc.lower()
+    except Exception:
+        return False
+
+
+def _score_candidate(abs_url: str, text: str) -> int:
+    s = (abs_url + " " + (text or "")).lower()
+    score = 0
+    for kw in PRICING_HINTS:
+        if kw in s:
+            score += 5
+    for bad in DEBOOST_HINTS:
+        if bad in s:
+            score -= 3
+
+    path = urlparse(abs_url).path.lower().strip("/")
+    if path in ("pricing", "plans"):
+        score += 10
+    if "compare" in path:
+        score += 3
+    return score
+
+
+def _discover_pricing_like_urls(page, root_url: str, limit: int = 8):
+    """
+    Step 2 — smarter discovery:
+    Scan homepage links and find likely pricing/plans/upgrade URLs.
+    """
+    root_url = _norm_url(root_url)
+
+    anchors = page.eval_on_selector_all(
+        "a[href]",
+        """(els) => els.map(a => ({
+            href: a.getAttribute('href') || '',
+            text: (a.innerText || '').trim().slice(0, 80)
+        }))"""
+    )
+
+    candidates = {}
+    for a in anchors:
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
+        if href.startswith(("mailto:", "tel:", "javascript:")):
+            continue
+
+        abs_url = _norm_url(urljoin(root_url, href))
+        if not abs_url or not _same_site(root_url, abs_url):
+            continue
+        if any(abs_url.lower().endswith(ext) for ext in (".pdf", ".png", ".jpg", ".jpeg", ".zip")):
+            continue
+
+        score = _score_candidate(abs_url, a.get("text", ""))
+        if score <= 0:
+            continue
+        candidates[abs_url] = max(score, candidates.get(abs_url, 0))
+
+    # fallback guesses (low score so discovered links win)
+    for fallback in [urljoin(root_url, "/pricing"), urljoin(root_url, "/plans"), urljoin(root_url, "/compare")]:
+        fb = _norm_url(fallback)
+        if _same_site(root_url, fb):
+            candidates.setdefault(fb, 1)
+
+    ranked = sorted(candidates.items(), key=lambda kv: kv[1], reverse=True)
+    return [u for u, _ in ranked[:limit]]
+
+
+def _try_dismiss_common_popups(page):
+    """
+    Best-effort: close cookie modals / newsletter popups.
+    Safe if it does nothing.
+    """
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+
+    # Try common "accept/close" buttons (best effort)
+    selectors = [
+        "button:has-text('Accept')",
+        "button:has-text('I agree')",
+        "button:has-text('Agree')",
+        "button:has-text('Got it')",
+        "button:has-text('Close')",
+        "button[aria-label*='close' i]",
+        "[aria-label*='close' i]",
+    ]
+    for sel in selectors:
+        try:
+            btn = page.locator(sel).first
+            if btn and btn.is_visible(timeout=250):
+                btn.click(timeout=500)
+                break
+        except Exception:
+            continue
+
+
+def _goto_robust(page, url: str):
+    """
+    Avoid 'networkidle' hangs:
+    - goto(wait_until='domcontentloaded') with timeout
+    - then bounded extra waits (load + small sleep)
+    """
+    notes = []
+    t0 = time.time()
+
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    except PWTimeoutError:
+        notes.append("goto_timeout_domcontentloaded")
+    except Exception as e:
+        notes.append(f"goto_error:{type(e).__name__}")
+
+    # bounded wait for 'load' (doesn't hang forever)
+    try:
+        page.wait_for_load_state("load", timeout=8000)
+    except Exception:
+        notes.append("load_state_timeout")
+
+    _try_dismiss_common_popups(page)
+
+    try:
+        page.wait_for_timeout(POST_GOTO_PAUSE_MS)
+    except Exception:
+        pass
+
+    final_url = ""
+    title = ""
+    try:
+        final_url = page.url
+    except Exception:
+        final_url = url
+    try:
+        title = page.title() or ""
+    except Exception:
+        title = ""
+
+    elapsed_ms = int((time.time() - t0) * 1000)
+    return final_url, title, elapsed_ms, ";".join(notes)
+
+
+def main():
+    if len(sys.argv) < 2:
+        return {"shots": [], "pages": [], "images": [], "error": "No URL argument provided to capture.py"}
+
+    url = _norm_url(sys.argv[1])
     max_images = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 
-    base_url = url.rstrip("/")
-    paths = ["", "/pricing", "/plans", "/compare", "/pricing/"]
-    pages = [base_url + p for p in paths]
-
-    # de-dupe (preserve order)
-    seen = set()
-    pages_unique = []
-    for p in pages:
-        if p not in seen:
-            seen.add(p)
-            pages_unique.append(p)
-
-    image_data_urls = []
-    pages_captured = []
+    shots = []
+    errors = []
 
     with sync_playwright() as pw:
         browser = _try_launch_browser(pw)
-
         context = browser.new_context(
             viewport=VIEWPORT,
             user_agent=(
@@ -116,34 +254,81 @@ def main():
         )
         page = context.new_page()
 
-        for page_url in pages_unique:
-            if len(image_data_urls) >= max_images:
+        # 1) Load homepage first
+        homepage = url.rstrip("/")
+        final_url, title, elapsed_ms, notes = _goto_robust(page, homepage)
+        try:
+            png = page.screenshot(full_page=True, type="png")
+            img_url = png_bytes_to_jpeg_data_url(png)
+            shots.append({
+                "url": homepage,
+                "final_url": final_url,
+                "title": title,
+                "notes": notes,
+                "image": img_url,
+                "elapsed_ms": elapsed_ms,
+            })
+        except Exception as e:
+            errors.append(f"homepage_screenshot_failed:{e}")
+            print(f"[capture.py] Homepage screenshot failed: {e}", file=sys.stderr)
+
+        # 2) Discover pricing-like pages via homepage links (Step 2)
+        discovered = []
+        try:
+            discovered = _discover_pricing_like_urls(page, homepage, limit=10)
+        except Exception as e:
+            errors.append(f"discovery_failed:{e}")
+            print(f"[capture.py] Discovery failed: {e}", file=sys.stderr)
+
+        # 3) Visit discovered pages and screenshot until max_images
+        visited = set([homepage])
+        for cand in discovered:
+            if len(shots) >= max_images:
                 break
+            if cand in visited:
+                continue
+            visited.add(cand)
+
             try:
-                page.goto(page_url, wait_until="networkidle", timeout=NAV_TIMEOUT_MS)
-                page.wait_for_timeout(1200)
-                png_bytes = page.screenshot(full_page=True, type="png")
-                image_data_urls.append(png_bytes_to_jpeg_data_url(png_bytes))
-                pages_captured.append(page_url)
+                final_url, title, elapsed_ms, notes = _goto_robust(page, cand)
+                png = page.screenshot(full_page=True, type="png")
+                img_url = png_bytes_to_jpeg_data_url(png)
+                shots.append({
+                    "url": cand,
+                    "final_url": final_url,
+                    "title": title,
+                    "notes": notes,
+                    "image": img_url,
+                    "elapsed_ms": elapsed_ms,
+                })
             except Exception as e:
-                # log failures to stderr only (stdout must remain JSON)
-                print(f"[capture.py] Failed page: {page_url} :: {e}", file=sys.stderr)
+                errors.append(f"capture_failed:{cand}:{e}")
+                print(f"[capture.py] Failed page: {cand} :: {e}", file=sys.stderr)
                 continue
 
         context.close()
         browser.close()
 
-    return {"pages": pages_captured, "images": image_data_urls}
+    # Back-compat keys (so your app doesn't break):
+    pages = [s.get("final_url") or s.get("url") for s in shots]
+    images = [s.get("image") for s in shots]
+
+    return {
+        "root": homepage,
+        "discovered_urls": discovered,
+        "pages": pages,          # back-compat
+        "images": images,        # back-compat
+        "shots": shots,          # new (Step 1 UI)
+        "errors": errors,
+    }
 
 
 if __name__ == "__main__":
-    # Always emit valid JSON to stdout, and keep stdout JSON-only.
     try:
         payload = main()
         print(json.dumps(payload))
         sys.exit(0)
     except Exception as e:
-        print(json.dumps({"pages": [], "images": [], "error": str(e)}))
+        print(json.dumps({"shots": [], "pages": [], "images": [], "error": str(e)}))
         print(f"[capture.py] ERROR: {e}", file=sys.stderr)
-        # Exit 0 so app.py can parse JSON and show structured error nicely
         sys.exit(0)

@@ -1,8 +1,10 @@
+# app.py
 import json
 import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
@@ -10,6 +12,24 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from readability import Document
 from openai import OpenAI
+
+# ✅ NEW: load .env early (before OpenAI() is constructed)
+from dotenv import load_dotenv
+
+
+# ----------------------------
+# Load environment (.env)
+# ----------------------------
+PROJECT_ROOT = Path(__file__).resolve().parent
+ENV_PATH = PROJECT_ROOT / ".env"
+
+# load_dotenv will:
+# - load from ENV_PATH if it exists
+# - not override already-set env vars by default
+load_dotenv(dotenv_path=ENV_PATH)
+
+# Optional: also allow OS env vars to win if already set
+# (default behavior is fine)
 
 
 # ----------------------------
@@ -75,6 +95,29 @@ Metrics + guardrails
 
 
 # ----------------------------
+# OpenAI client helper
+# ----------------------------
+def get_openai_client() -> OpenAI:
+    """
+    Creates an OpenAI client. Requires OPENAI_API_KEY in environment.
+    We keep it in a function so we can fail with a friendly message.
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+
+    if not api_key:
+        # Show a useful Streamlit error and stop the run
+        st.error(
+            "OPENAI_API_KEY not found.\n\n"
+            "Make sure you have a `.env` file in the same folder as app.py with:\n"
+            "OPENAI_API_KEY=your_key_here\n\n"
+            f"Checked for .env at: {ENV_PATH}"
+        )
+        st.stop()
+
+    return OpenAI(api_key=api_key)
+
+
+# ----------------------------
 # Helpers
 # ----------------------------
 def is_valid_url(url: str) -> bool:
@@ -112,18 +155,8 @@ def extract_from_single_page(page_url: str, headers: dict):
             if txt and any(
                 k in txt.lower()
                 for k in [
-                    "book",
-                    "demo",
-                    "start",
-                    "get",
-                    "try",
-                    "sign",
-                    "contact",
-                    "pricing",
-                    "plans",
-                    "buy",
-                    "join",
-                    "trial",
+                    "book", "demo", "start", "get", "try", "sign", "contact",
+                    "pricing", "plans", "buy", "join", "trial",
                 ]
             ):
                 ctas.append(f"LINK: {txt} -> {href}")
@@ -166,7 +199,7 @@ def extract_text_from_url(url: str):
 
 
 def run_ai_text(text: str):
-    client = OpenAI()
+    client = get_openai_client()
     response = client.responses.create(
         model=MODEL_TEXT,
         input=f"{PROMPT}\n\n{text[:MAX_CHARS]}",
@@ -174,32 +207,34 @@ def run_ai_text(text: str):
     return response.output_text
 
 
-def run_ai_vision(text_context, image_data_urls, pages):
-    client = OpenAI()
+def run_ai_vision(text_context, shots):
+    client = get_openai_client()
+
+    visited_lines = []
+    for s in shots:
+        visited_lines.append(
+            f"- {s.get('final_url') or s.get('url')}"
+            + (f" | title: {s.get('title')}" if s.get("title") else "")
+        )
 
     content = [
         {
             "type": "input_text",
-            "text": f"{PROMPT}\n\nCaptured pages:\n"
-            + "\n".join(f"- {p}" for p in pages),
+            "text": (
+                f"{PROMPT}\n\n"
+                f"Visited pages (use these URLs when referencing evidence):\n"
+                + "\n".join(visited_lines)
+            ),
         }
     ]
 
     if text_context:
-        content.append(
-            {
-                "type": "input_text",
-                "text": f"\n\nText context:\n{text_context[:MAX_CHARS]}",
-            }
-        )
+        content.append({"type": "input_text", "text": f"\n\nText context:\n{text_context[:MAX_CHARS]}"})
 
-    for img in image_data_urls:
-        content.append(
-            {
-                "type": "input_image",
-                "image_url": img,
-            }
-        )
+    for s in shots:
+        img = s.get("image")
+        if img:
+            content.append({"type": "input_image", "image_url": img})
 
     response = client.responses.create(
         model=MODEL_VISION,
@@ -210,19 +245,13 @@ def run_ai_vision(text_context, image_data_urls, pages):
 
 
 def take_auto_screenshots(url: str):
-    """
-    Runs capture.py using the SAME python executable as this Streamlit app,
-    so capture.py can import playwright.
-
-    Returns: (images, pages, debug_dict)
-    """
     cmd = [sys.executable, "capture.py", url, str(MAX_IMAGES)]
 
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        timeout=120,  # prevent hangs
+        timeout=140,
     )
 
     stdout = (result.stdout or "").strip()
@@ -236,7 +265,6 @@ def take_auto_screenshots(url: str):
         "stderr_preview": stderr[:2000],
     }
 
-    # Non-zero exit => show stderr + stdout previews
     if result.returncode != 0:
         raise RuntimeError(
             "capture.py failed\n"
@@ -245,7 +273,6 @@ def take_auto_screenshots(url: str):
             f"stdout (first 2000 chars):\n{debug['stdout_preview']}"
         )
 
-    # Must be valid JSON
     try:
         data = json.loads(stdout)
     except Exception as e:
@@ -256,7 +283,6 @@ def take_auto_screenshots(url: str):
             f"stderr (first 2000 chars):\n{debug['stderr_preview']}"
         )
 
-    # If capture.py returns a structured error payload, bubble it up
     if isinstance(data, dict) and data.get("error"):
         raise RuntimeError(
             "capture.py returned an error payload:\n"
@@ -264,10 +290,30 @@ def take_auto_screenshots(url: str):
             f"stderr (first 2000 chars):\n{debug['stderr_preview']}"
         )
 
-    images = data.get("images", []) if isinstance(data, dict) else []
-    pages = data.get("pages", []) if isinstance(data, dict) else []
+    shots = data.get("shots") if isinstance(data, dict) else None
+    if not shots:
+        images = data.get("images", []) if isinstance(data, dict) else []
+        pages = data.get("pages", []) if isinstance(data, dict) else []
+        shots = [{"image": img, "url": p, "final_url": p, "title": "", "notes": ""} for img, p in zip(images, pages)]
 
-    return images, pages, debug
+    return shots, debug, data
+
+
+def render_shots_gallery(shots):
+    st.subheader("Captured screenshots")
+    for i, s in enumerate(shots, start=1):
+        cols = st.columns([1, 2])
+        with cols[0]:
+            st.image(s.get("image"), width='stretch')
+        with cols[1]:
+            st.markdown(f"**{i}. URL:** `{s.get('url')}`")
+            if s.get("final_url") and s.get("final_url") != s.get("url"):
+                st.markdown(f"**Final:** `{s.get('final_url')}`")
+            if s.get("title"):
+                st.markdown(f"**Title:** {s.get('title')}")
+            if s.get("notes"):
+                st.markdown(f"**Notes:** `{s.get('notes')}`")
+        st.divider()
 
 
 # ----------------------------
@@ -276,10 +322,8 @@ def take_auto_screenshots(url: str):
 st.set_page_config(page_title="AI CRO Audit Tool", page_icon="📈")
 st.title("📈 AI CRO Audit Tool")
 
-tab1, tab2, tab3 = st.tabs(["URL Audit", "Paste Text", "Vision (Auto)"])
+tab1, tab2 = st.tabs(["URL Audit", "Vision (Auto)"])
 
-
-# --- TEXT AUDIT ---
 with tab1:
     url = st.text_input("Website URL", key="url_audit")
 
@@ -297,27 +341,9 @@ with tab1:
         st.subheader("Results")
         st.write(result)
 
-
-# --- PASTE ---
 with tab2:
-    text = st.text_area("Paste content", key="paste_text", height=240)
-
-    if st.button("Run Text Audit", key="run_text_audit", type="primary"):
-        if not text.strip():
-            st.error("Paste something first.")
-            st.stop()
-
-        result = run_ai_text(text)
-        st.subheader("Results")
-        st.write(result)
-
-
-# --- VISION ---
-with tab3:
     vurl = st.text_input("Website URL for screenshots", key="vision_url")
-    include_text = st.checkbox(
-        "Include text context", value=True, key="vision_include_text"
-    )
+    include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
 
     if st.button("Run Vision Audit", key="run_vision", type="primary"):
         if not vurl or not is_valid_url(vurl):
@@ -326,20 +352,25 @@ with tab3:
 
         with st.spinner("Capturing screenshots (auto)..."):
             try:
-                images, pages, debug = take_auto_screenshots(vurl)
+                shots, debug, raw = take_auto_screenshots(vurl)
             except Exception as e:
                 st.error(f"Screenshot failed: {e}")
                 st.stop()
 
-        # Always show debug info once screenshots step completes
         with st.expander("Debug (capture.py)"):
             st.json(debug)
+            if isinstance(raw, dict) and (raw.get("discovered_urls") or raw.get("errors")):
+                st.write("**Discovered URLs:**")
+                st.write(raw.get("discovered_urls", []))
+                if raw.get("errors"):
+                    st.write("**Capture errors:**")
+                    st.write(raw.get("errors", []))
 
-        if not images:
-            st.error(
-                "No screenshots captured. The site may block headless browsing, or capture.py failed silently."
-            )
+        if not shots:
+            st.error("No screenshots captured. The site may block headless browsing.")
             st.stop()
+
+        render_shots_gallery(shots)
 
         text_context = ""
         if include_text:
@@ -347,10 +378,10 @@ with tab3:
                 text_context = extract_text_from_url(vurl)
 
         with st.spinner("Running vision audit..."):
-            result = run_ai_vision(text_context, images, pages)
+            result = run_ai_vision(text_context, shots)
 
         st.subheader("Results")
         st.write(result)
 
-        with st.expander("Captured pages"):
-            st.write(pages)
+        with st.expander("Visited pages (final URLs)"):
+            st.write([s.get("final_url") or s.get("url") for s in shots])
