@@ -13,23 +13,23 @@ from bs4 import BeautifulSoup
 from readability import Document
 from openai import OpenAI
 
-# ✅ NEW: load .env early (before OpenAI() is constructed)
-from dotenv import load_dotenv
-
-
 # ----------------------------
-# Load environment (.env)
+# Load environment (.env / Streamlit Secrets)
 # ----------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
 ENV_PATH = PROJECT_ROOT / ".env"
 
-# load_dotenv will:
-# - load from ENV_PATH if it exists
-# - not override already-set env vars by default
-load_dotenv(dotenv_path=ENV_PATH)
-
-# Optional: also allow OS env vars to win if already set
-# (default behavior is fine)
+# Prefer Streamlit Secrets in production (Streamlit Cloud)
+if "OPENAI_API_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+else:
+    # Local dev: try .env if python-dotenv is installed
+    try:
+        from dotenv import load_dotenv  # optional dependency
+        load_dotenv(dotenv_path=ENV_PATH)
+    except Exception:
+        # python-dotenv not installed OR .env missing — that's OK if env var is set another way
+        pass
 
 
 # ----------------------------
@@ -100,16 +100,21 @@ Metrics + guardrails
 def get_openai_client() -> OpenAI:
     """
     Creates an OpenAI client. Requires OPENAI_API_KEY in environment.
-    We keep it in a function so we can fail with a friendly message.
+    Supports:
+      - Streamlit Cloud: st.secrets["OPENAI_API_KEY"]
+      - Local dev: .env (if python-dotenv installed) or OS env var
     """
     api_key = os.getenv("OPENAI_API_KEY")
 
     if not api_key:
-        # Show a useful Streamlit error and stop the run
         st.error(
             "OPENAI_API_KEY not found.\n\n"
-            "Make sure you have a `.env` file in the same folder as app.py with:\n"
-            "OPENAI_API_KEY=your_key_here\n\n"
+            "Set it using one of these:\n"
+            "1) Streamlit Cloud → App → Settings → Secrets:\n"
+            '   OPENAI_API_KEY="sk-..."\n'
+            "2) Local: create a .env file next to app.py containing:\n"
+            "   OPENAI_API_KEY=sk-...\n"
+            "3) Local: export OPENAI_API_KEY in your shell.\n\n"
             f"Checked for .env at: {ENV_PATH}"
         )
         st.stop()
@@ -155,8 +160,18 @@ def extract_from_single_page(page_url: str, headers: dict):
             if txt and any(
                 k in txt.lower()
                 for k in [
-                    "book", "demo", "start", "get", "try", "sign", "contact",
-                    "pricing", "plans", "buy", "join", "trial",
+                    "book",
+                    "demo",
+                    "start",
+                    "get",
+                    "try",
+                    "sign",
+                    "contact",
+                    "pricing",
+                    "plans",
+                    "buy",
+                    "join",
+                    "trial",
                 ]
             ):
                 ctas.append(f"LINK: {txt} -> {href}")
@@ -229,7 +244,12 @@ def run_ai_vision(text_context, shots):
     ]
 
     if text_context:
-        content.append({"type": "input_text", "text": f"\n\nText context:\n{text_context[:MAX_CHARS]}"})
+        content.append(
+            {
+                "type": "input_text",
+                "text": f"\n\nText context:\n{text_context[:MAX_CHARS]}",
+            }
+        )
 
     for s in shots:
         img = s.get("image")
@@ -294,7 +314,10 @@ def take_auto_screenshots(url: str):
     if not shots:
         images = data.get("images", []) if isinstance(data, dict) else []
         pages = data.get("pages", []) if isinstance(data, dict) else []
-        shots = [{"image": img, "url": p, "final_url": p, "title": "", "notes": ""} for img, p in zip(images, pages)]
+        shots = [
+            {"image": img, "url": p, "final_url": p, "title": "", "notes": ""}
+            for img, p in zip(images, pages)
+        ]
 
     return shots, debug, data
 
@@ -304,7 +327,7 @@ def render_shots_gallery(shots):
     for i, s in enumerate(shots, start=1):
         cols = st.columns([1, 2])
         with cols[0]:
-            st.image(s.get("image"), width='stretch')
+            st.image(s.get("image"), use_container_width=True)
         with cols[1]:
             st.markdown(f"**{i}. URL:** `{s.get('url')}`")
             if s.get("final_url") and s.get("final_url") != s.get("url"):
@@ -324,6 +347,7 @@ st.title("📈 AI CRO Audit Tool")
 
 tab1, tab2 = st.tabs(["URL Audit", "Vision (Auto)"])
 
+
 with tab1:
     url = st.text_input("Website URL", key="url_audit")
 
@@ -340,6 +364,7 @@ with tab1:
 
         st.subheader("Results")
         st.write(result)
+
 
 with tab2:
     vurl = st.text_input("Website URL for screenshots", key="vision_url")
