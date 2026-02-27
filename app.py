@@ -558,6 +558,14 @@ def _parse_lhr(lhr: dict) -> dict:
     def display(key: str):
         return audits.get(key, {}).get("displayValue", "N/A")
 
+    def fmt_ms(n):
+        """Format a millisecond numeric value into a short display string."""
+        if n is None:
+            return "N/A"
+        return f"{n / 1000:.2f} s" if n >= 1000 else f"{round(n)} ms"
+
+    ttfb_n = ms("server-response-time")
+
     return {
         "score": int(perf_score * 100) if perf_score is not None else None,
         "lcp_ms":       ms("largest-contentful-paint"),
@@ -565,15 +573,16 @@ def _parse_lhr(lhr: dict) -> dict:
         "cls_raw":      audits.get("cumulative-layout-shift", {}).get("numericValue"),
         "tbt_ms":       ms("total-blocking-time"),
         "inp_ms":       ms("interaction-to-next-paint"),
-        "ttfb_ms":      ms("server-response-time"),
+        "ttfb_ms":      ttfb_n,
         "speed_ms":     ms("speed-index"),
-        # display strings (already formatted by Lighthouse)
+        # display strings (already formatted by Lighthouse, except TTFB which
+        # returns the full sentence "Root document took X ms" — format it ourselves)
         "lcp":          display("largest-contentful-paint"),
         "fcp":          display("first-contentful-paint"),
         "cls":          display("cumulative-layout-shift"),
         "tbt":          display("total-blocking-time"),
         "inp":          display("interaction-to-next-paint"),
-        "ttfb":         display("server-response-time"),
+        "ttfb":         fmt_ms(ttfb_n),
         "speed_index":  display("speed-index"),
     }
 
