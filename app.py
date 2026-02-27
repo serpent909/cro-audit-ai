@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -43,6 +44,7 @@ MAX_CHARS = 20000
 MAX_IMAGES = 3
 
 PAGESPEED_API = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+PSI_RUNS = 3  # parallel runs per strategy; median is taken to reduce variability
 
 # Core Web Vitals thresholds for colour-coding in the UI
 CWV_THRESHOLDS = {
@@ -590,19 +592,20 @@ def _parse_lhr(lhr: dict) -> dict:
 def fetch_pagespeed(url: str) -> tuple[str, dict]:
     """
     Fetch PageSpeed Insights for mobile + desktop in parallel.
+    Runs PSI_RUNS times per strategy concurrently and takes the median of each
+    numeric metric to reduce Lighthouse variability.
     Returns (ai_context_str, {mobile: metrics, desktop: metrics}).
     On total failure returns ("", {}).
     """
     api_key = os.getenv("PAGESPEED_API_KEY", "")
 
-    def _fetch(strategy: str) -> tuple[str, dict | None]:
+    def _fetch(strategy: str, _: int) -> tuple[str, dict | None]:
         params = {"url": url, "strategy": strategy, "category": "performance"}
         if api_key:
             params["key"] = api_key
         try:
             r = requests.get(PAGESPEED_API, params=params, timeout=60)
             if r.status_code != 200:
-                # Embed the HTTP error so caller can surface it
                 return strategy, {"_http_error": r.status_code}
             data = r.json()
             lhr = data.get("lighthouseResult", {})
@@ -610,31 +613,89 @@ def fetch_pagespeed(url: str) -> tuple[str, dict]:
         except Exception as e:
             return strategy, {"_http_error": str(e)}
 
-    raw: dict[str, dict] = {}
+    def _median_metrics(runs: list[dict]) -> dict:
+        """Compute element-wise median across PSI runs and rebuild display strings."""
+        def med(key):
+            vals = [r[key] for r in runs if r.get(key) is not None]
+            return statistics.median(vals) if vals else None
+
+        def fmt_ms(n):
+            if n is None:
+                return "N/A"
+            return f"{n / 1000:.2f} s" if n >= 1000 else f"{round(n)} ms"
+
+        score_vals = [r["score"] for r in runs if r.get("score") is not None]
+        score = round(statistics.median(score_vals)) if score_vals else None
+
+        lcp_ms  = med("lcp_ms")
+        fcp_ms  = med("fcp_ms")
+        cls_raw = med("cls_raw")
+        tbt_ms  = med("tbt_ms")
+        inp_ms  = med("inp_ms")
+        ttfb_ms = med("ttfb_ms")
+        speed_ms = med("speed_ms")
+
+        return {
+            "score":      score,
+            "lcp_ms":     lcp_ms,
+            "fcp_ms":     fcp_ms,
+            "cls_raw":    cls_raw,
+            "tbt_ms":     tbt_ms,
+            "inp_ms":     inp_ms,
+            "ttfb_ms":    ttfb_ms,
+            "speed_ms":   speed_ms,
+            # recompute display strings from median numerics
+            "lcp":        fmt_ms(lcp_ms),
+            "fcp":        fmt_ms(fcp_ms),
+            "cls":        f"{cls_raw:.3f}" if cls_raw is not None else "N/A",
+            "tbt":        fmt_ms(tbt_ms),
+            "inp":        fmt_ms(inp_ms),
+            "ttfb":       fmt_ms(ttfb_ms),
+            "speed_index": fmt_ms(speed_ms),
+            "_run_count": len(runs),
+        }
+
+    # Submit PSI_RUNS requests for each strategy in parallel (2 × PSI_RUNS total)
+    runs_by_strategy: dict[str, list[dict]] = {"mobile": [], "desktop": []}
     psi_errors: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(_fetch, s) for s in ("mobile", "desktop")]
+
+    with ThreadPoolExecutor(max_workers=PSI_RUNS * 2) as executor:
+        futures = [
+            executor.submit(_fetch, s, i)
+            for s in ("mobile", "desktop")
+            for i in range(PSI_RUNS)
+        ]
         for future in as_completed(futures):
             strategy, metrics = future.result()
             if metrics and "_http_error" not in metrics:
-                raw[strategy] = metrics
+                runs_by_strategy[strategy].append(metrics)
             else:
                 err = (metrics or {}).get("_http_error", "no data returned")
-                psi_errors[strategy] = str(err)
+                # Only keep the first error per strategy
+                psi_errors.setdefault(strategy, str(err))
+
+    raw: dict[str, dict] = {}
+    for strategy, runs in runs_by_strategy.items():
+        if runs:
+            raw[strategy] = _median_metrics(runs)
 
     if not raw:
         return "", {"_errors": psi_errors}
 
     raw["_errors"] = psi_errors
 
-    lines = ["PAGE SPEED (Google PageSpeed Insights — include in scorecard and mobile section)"]
+    lines = [
+        f"PAGE SPEED (Google PageSpeed Insights — median of {PSI_RUNS} runs — "
+        "include in scorecard and mobile section)"
+    ]
     for strategy in ("mobile", "desktop"):
         m = raw.get(strategy)
         if not m:
             lines.append(f"\n{strategy.capitalize()}: data unavailable")
             continue
+        n = m.get("_run_count", PSI_RUNS)
         score = m["score"] if m["score"] is not None else "N/A"
-        lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100")
+        lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100 (median of {n} runs)")
         lines.append(f"  LCP:         {m['lcp']}  (Good <2.5s, Poor >4s)")
         lines.append(f"  FCP:         {m['fcp']}  (Good <1.8s, Poor >3s)")
         lines.append(f"  CLS:         {m['cls']}  (Good <0.1, Poor >0.25)")
@@ -852,8 +913,9 @@ def render_pagespeed(raw: dict):
         m = raw[strategy]
         score = m.get("score")
         with col:
+            run_count = m.get("_run_count", PSI_RUNS)
             st.metric(
-                label=f"{strategy.capitalize()} — Performance Score",
+                label=f"{strategy.capitalize()} — Performance Score (median of {run_count} runs)",
                 value=f"{score}/100" if score is not None else "N/A",
                 delta=score_colour(score),
                 delta_color="off",
