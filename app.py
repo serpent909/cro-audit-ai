@@ -94,6 +94,7 @@ NON-NEGOTIABLE RULES
 - Always evaluate what is visible ABOVE THE FOLD (without scrolling) separately from below-the-fold content.
 - Compare CTAs and messaging across pages — flag any inconsistencies.
 - If PageSpeed data is provided, use it to inform the Friction and Mobile scorecard scores and flag any Poor Core Web Vitals (LCP >4s, CLS >0.25, INP >500ms, TTFB >1.8s) as concrete conversion issues with their impact on bounce rate and user experience.
+- IMPORTANT — screenshots only show ONE STATE of interactive elements. Carousels, sliders, tabs, and accordions display only one slide/panel/item at a time in a screenshot. Always cross-reference with the TEXT CONTEXT and INTERACTIVE ELEMENTS section, which contains ALL DOM content including hidden slides. Never report "only 1 testimonial" if the text context or INTERACTIVE ELEMENTS section shows a carousel or multiple items.
 """
 
 PROMPT_SAAS = _PROMPT_RULES + """
@@ -373,17 +374,58 @@ def extract_from_single_page(page_url: str, headers: dict, html: str | None = No
                 f"{len(visible)} visible field(s) | labels: {labels[:8]} | placeholders: {placeholders[:8]}"
             )
 
-        # Social proof
+        # Social proof — extract ALL items including hidden carousel slides
+        # Skip container elements (those that hold 2+ matching children) to avoid
+        # double-counting parent + children. This correctly counts each slide once.
         proof_keywords = [
             "testimonial", "review", "rating", "stars", "trustpilot",
             "g2", "capterra", "case-study", "customers", "clients",
         ]
         proof_elements = []
+        seen_proof: set[str] = set()
         for kw in proof_keywords:
-            for el in full.find_all(class_=re.compile(kw, re.I))[:2]:
-                txt = el.get_text(" ", strip=True)[:200]
-                if txt:
-                    proof_elements.append(f"[{kw}]: {txt}")
+            all_matches = full.find_all(class_=re.compile(kw, re.I))
+            items = []
+            for el in all_matches:
+                # Skip if this element is a container holding 2+ same-keyword children
+                if len(el.find_all(class_=re.compile(kw, re.I))) >= 2:
+                    continue
+                txt = el.get_text(" ", strip=True)
+                if txt and 10 < len(txt) < 1000 and txt not in seen_proof:
+                    seen_proof.add(txt)
+                    items.append(txt[:250])
+            if items:
+                proof_elements.append(f"[{kw}] — {len(items)} item(s) found:")
+                for t in items[:6]:
+                    proof_elements.append(f"  • {t}")
+                if len(items) > 6:
+                    proof_elements.append(f"  (+ {len(items) - 6} more not shown)")
+
+        # Interactive elements — carousels, tabs, accordions are only partially
+        # visible in screenshots. Report counts so the AI has the full picture.
+        interactive_notes = []
+
+        _carousel_cls = re.compile(r"(swiper|slick|carousel|slider|splide|glide|flickity|owl)", re.I)
+        _slide_cls    = re.compile(r"(slide|swiper-slide|slick-slide|carousel-item|splide__slide)", re.I)
+        for container in full.find_all(class_=_carousel_cls)[:5]:
+            slides = container.find_all(class_=_slide_cls)
+            if len(slides) >= 2:
+                interactive_notes.append(
+                    f"Carousel/slider with {len(slides)} slides — screenshots show only 1 at a time"
+                )
+                break  # report once per page
+
+        tab_panels = full.find_all(attrs={"role": "tabpanel"})
+        if len(tab_panels) >= 2:
+            interactive_notes.append(
+                f"{len(tab_panels)} tab panels — screenshots show only the active tab"
+            )
+
+        details_els = full.find_all("details")
+        if len(details_els) >= 2:
+            interactive_notes.append(
+                f"{len(details_els)} expandable accordion/FAQ items — most are collapsed in screenshots"
+            )
 
         # Trust signals
         trust_signals = []
@@ -411,7 +453,10 @@ FORMS:
 {chr(10).join(form_summaries) if form_summaries else "No forms detected"}
 
 SOCIAL PROOF:
-{chr(10).join(proof_elements[:10]) if proof_elements else "None detected"}
+{chr(10).join(proof_elements) if proof_elements else "None detected"}
+
+INTERACTIVE ELEMENTS (not fully visible in screenshots):
+{chr(10).join(interactive_notes) if interactive_notes else "None detected"}
 
 TRUST SIGNALS:
 {chr(10).join(trust_signals[:10]) if trust_signals else "None detected"}
@@ -513,6 +558,14 @@ def _parse_lhr(lhr: dict) -> dict:
     def display(key: str):
         return audits.get(key, {}).get("displayValue", "N/A")
 
+    def fmt_ms(n):
+        """Format a millisecond numeric value into a short display string."""
+        if n is None:
+            return "N/A"
+        return f"{n / 1000:.2f} s" if n >= 1000 else f"{round(n)} ms"
+
+    ttfb_n = ms("server-response-time")
+
     return {
         "score": int(perf_score * 100) if perf_score is not None else None,
         "lcp_ms":       ms("largest-contentful-paint"),
@@ -520,15 +573,16 @@ def _parse_lhr(lhr: dict) -> dict:
         "cls_raw":      audits.get("cumulative-layout-shift", {}).get("numericValue"),
         "tbt_ms":       ms("total-blocking-time"),
         "inp_ms":       ms("interaction-to-next-paint"),
-        "ttfb_ms":      ms("server-response-time"),
+        "ttfb_ms":      ttfb_n,
         "speed_ms":     ms("speed-index"),
-        # display strings (already formatted by Lighthouse)
+        # display strings (already formatted by Lighthouse, except TTFB which
+        # returns the full sentence "Root document took X ms" — format it ourselves)
         "lcp":          display("largest-contentful-paint"),
         "fcp":          display("first-contentful-paint"),
         "cls":          display("cumulative-layout-shift"),
         "tbt":          display("total-blocking-time"),
         "inp":          display("interaction-to-next-paint"),
-        "ttfb":         display("server-response-time"),
+        "ttfb":         fmt_ms(ttfb_n),
         "speed_index":  display("speed-index"),
     }
 
