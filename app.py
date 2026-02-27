@@ -83,51 +83,56 @@ DISCOVERY_DEBOOST = [
 ]
 MAX_DISCOVERED = 8  # max additional pages from link discovery
 
-PROMPT = """
+_PROMPT_RULES = """
 You are a senior CRO (Conversion Rate Optimization) consultant. Produce an audit that is specific, evidence-based, and action-oriented.
 
 NON-NEGOTIABLE RULES
 - Only make claims supported by the provided text or screenshots.
 - If you cannot confirm something, write: "Not observed in provided content."
-- Every issue MUST include Evidence (quote text OR describe what is visible and where: 'hero area', 'header nav', 'pricing table', etc.).
+- Every issue MUST include Evidence (quote text OR describe what is visible and where: 'hero area', 'header nav', 'pricing table', 'product page', etc.).
 - If CTA candidates exist, list them and evaluate them (do not claim no CTAs).
 - Always evaluate what is visible ABOVE THE FOLD (without scrolling) separately from below-the-fold content.
-- Compare CTAs and messaging across pages — flag any inconsistencies between the homepage promise and pricing/signup pages.
+- Compare CTAs and messaging across pages — flag any inconsistencies.
 - If PageSpeed data is provided, use it to inform the Friction and Mobile scorecard scores and flag any Poor Core Web Vitals (LCP >4s, CLS >0.25, INP >500ms, TTFB >1.8s) as concrete conversion issues with their impact on bounce rate and user experience.
+"""
+
+PROMPT_SAAS = _PROMPT_RULES + """
+SITE TYPE: SaaS / Software product
+Focus on: free trial / demo conversion, pricing plan clarity, signup friction, feature differentiation, and trust signals relevant to software buyers (security, integrations, customer logos, case studies).
 
 OUTPUT FORMAT (use headings exactly)
 
 ## 0) Business context
-In 1–2 sentences: identify the apparent industry, business model (B2B SaaS / e-commerce / lead gen / marketplace / etc.), and primary target audience. Use this context to inform all findings below.
+In 1–2 sentences: identify the SaaS category, likely buyer (SMB / mid-market / enterprise), and primary conversion goal (free trial / demo / paid signup). Use this to inform all findings.
 
 ## 1) Funnel map
-List each page captured, its apparent purpose, and the primary CTA on that page.
+List each page captured, its apparent purpose, and the primary CTA on that page (trial / demo / signup / upgrade etc.).
 
 ## 2) Executive summary
-- Biggest conversion blocker
-- Biggest trust/credibility gap
-- Biggest message/positioning gap
-- Biggest friction point
+- Biggest conversion blocker (what stops someone starting a trial or booking a demo?)
+- Biggest trust/credibility gap (what makes a buyer hesitate to hand over card details or data?)
+- Biggest messaging/positioning gap (is the value prop differentiated from generic competitors?)
+- Biggest friction point (signup steps, pricing confusion, missing integrations info?)
 - Highest-impact quick win
-- CTA consistency verdict: are CTAs and messaging consistent across pages, or contradictory?
+- CTA consistency verdict: do homepage promise, pricing page, and signup page tell the same story?
 
 ## 3) Conversion scorecard (weighted)
 Score each dimension 0–10 with one sentence of rationale. Then compute a weighted overall score.
 
 | Dimension | Score /10 | Weight | Weighted |
 |---|---|---|---|
-| Value prop clarity | ? | 2× | |
-| CTA clarity | ? | 2× | |
-| Trust & social proof | ? | 1.5× | |
-| Pricing clarity | ? | 1.5× | |
-| Friction (forms/steps) | ? | 1× | |
-| Visual hierarchy | ? | 1× | |
+| Value prop & differentiation | ? | 2× | |
+| Trial / demo CTA clarity | ? | 2× | |
+| Pricing plan clarity | ? | 1.5× | |
+| Trust & social proof (logos, case studies, reviews) | ? | 1.5× | |
+| Signup / onboarding friction | ? | 1× | |
+| Feature communication | ? | 1× | |
 | Mobile experience | ? | 1× | |
 
 Overall score = sum(weighted) / 10 → show as **X.X / 10**
 
 ## 4) Above-the-fold analysis
-For EACH page captured: what does a visitor see before scrolling? Is the value prop clear? Is there a visible CTA? What is missing or unclear from the first impression?
+For EACH page captured: what does a visitor see before scrolling? Is the value prop and differentiator clear? Is a trial/demo CTA visible? What is missing or unclear from the first impression?
 
 ## 5) Top 7 issues (ranked by Impact × Confidence)
 For each issue:
@@ -136,22 +141,88 @@ For each issue:
 - Effort: S/M/L
 - Confidence: High/Med/Low
 - Evidence (quote or describe exact location on page)
-- Recommendation (specific, actionable — not vague advice)
+- Recommendation (specific, actionable)
 - Test idea: hypothesis → primary metric → guardrail metric
 
 ## 6) Mobile considerations
-Identify 3–5 mobile-specific CRO risks: tap target sizes, truncated headlines, sticky CTAs, form usability on small screens, etc. If a mobile screenshot is provided, base findings on visual evidence. Otherwise, infer from page structure and content.
+Identify 3–5 mobile-specific CRO risks for SaaS: demo/trial CTA tap targets, pricing table horizontal scroll, form field usability on mobile keyboards, sticky header CTAs, load speed on 4G. Base on visual evidence if a mobile screenshot is provided.
 
 ## 7) Copy & CTA improvements (write the actual copy)
-- 3 improved headline/value prop options (include a one-line rationale for each)
-- 3 improved primary CTA label options (tailored to the specific page intent)
-- 3 trust microcopy examples (to place near CTA or form submit button)
+- 3 improved headline/value prop options (include a one-line rationale for each, focused on outcome or pain relief for the target buyer)
+- 3 improved primary CTA label options (e.g. "Start free trial", "See it in action", "Get your free account")
+- 3 trust microcopy examples to place near the primary CTA or signup form (e.g. "No credit card required · Cancel anytime")
 
 ## 8) Experiment plan (2 weeks)
-Week 1: 2 quick wins (low effort, high confidence)
-Week 2: 2 bigger tests (higher effort, higher potential impact)
+Week 1: 2 quick wins (low effort, high confidence) — e.g. CTA label, headline, trust badge placement
+Week 2: 2 bigger tests — e.g. pricing page layout, social proof section, trial vs demo CTA
 For each test: hypothesis | primary metric | guardrail metric | minimum detectable effect
 """
+
+PROMPT_ECOMMERCE = _PROMPT_RULES + """
+SITE TYPE: E-commerce / Online store
+Focus on: product clarity, Add-to-Cart / Buy Now conversion, price anchoring, trust signals relevant to online shoppers (reviews, returns, shipping, payment options), and reducing cart abandonment.
+
+OUTPUT FORMAT (use headings exactly)
+
+## 0) Business context
+In 1–2 sentences: identify the product category/niche, likely customer (demographics, intent level), and primary conversion goal (first purchase / repeat purchase / subscription). Use this to inform all findings.
+
+## 1) Funnel map
+List each page captured, its apparent purpose, and the primary CTA (Shop Now / Add to Cart / Buy Now / View Collection etc.).
+
+## 2) Executive summary
+- Biggest conversion blocker (what stops someone adding to cart or completing checkout?)
+- Biggest trust gap (what makes a visitor hesitant to buy — no reviews, unclear returns, unfamiliar brand?)
+- Biggest product/value clarity gap (is it clear what is being sold, what it does, and why it is worth the price?)
+- Biggest checkout/cart friction point
+- Highest-impact quick win
+- CTA consistency verdict: do homepage, collection pages, and product pages tell a consistent purchase story?
+
+## 3) Conversion scorecard (weighted)
+Score each dimension 0–10 with one sentence of rationale. Then compute a weighted overall score.
+
+| Dimension | Score /10 | Weight | Weighted |
+|---|---|---|---|
+| Product clarity & imagery | ? | 2× | |
+| Buy / Add-to-Cart CTA prominence | ? | 2× | |
+| Trust signals (reviews, ratings, returns) | ? | 1.5× | |
+| Price anchoring & value perception | ? | 1.5× | |
+| Cart & checkout friction | ? | 1× | |
+| Mobile shopping experience | ? | 1× | |
+| Delivery, returns & payment visibility | ? | 1× | |
+
+Overall score = sum(weighted) / 10 → show as **X.X / 10**
+
+## 4) Above-the-fold analysis
+For EACH page captured: what does a visitor see before scrolling? Is the product/offer immediately clear? Is a Buy/Add-to-Cart CTA visible? Is there any price, social proof, or urgency signal above the fold? What is missing?
+
+## 5) Top 7 issues (ranked by Impact × Confidence)
+For each issue:
+- **Issue** (one line)
+- Impact: High/Med/Low
+- Effort: S/M/L
+- Confidence: High/Med/Low
+- Evidence (quote or describe exact location: 'product hero', 'below product images', 'cart drawer', etc.)
+- Recommendation (specific, actionable — e.g. "Add star rating summary directly below product title")
+- Test idea: hypothesis → primary metric → guardrail metric
+
+## 6) Mobile shopping considerations
+Identify 3–5 mobile-specific CRO risks for e-commerce: thumb-friendly Add-to-Cart button size and position, product image pinch-zoom or swipe gallery, sticky buy button on scroll, checkout autofill, payment method visibility (Apple Pay / Google Pay), load speed impact on mobile shoppers. Base on visual evidence if a mobile screenshot is provided.
+
+## 7) Copy & CTA improvements (write the actual copy)
+- 3 improved product headline / hero copy options (focus on outcome, transformation, or key differentiator — not just product name)
+- 3 improved primary CTA label options (tailored to purchase intent: e.g. "Add to Cart", "Buy Now — Ships in 24h", "Get Yours Today")
+- 3 trust microcopy examples to place near the buy button or at checkout (e.g. "Free returns within 30 days · Secure checkout")
+
+## 8) Experiment plan (2 weeks)
+Week 1: 2 quick wins — e.g. CTA label, trust badge near buy button, review summary above the fold
+Week 2: 2 bigger tests — e.g. product page layout, urgency/scarcity messaging, price anchoring (was/now), image gallery vs video
+For each test: hypothesis | primary metric | guardrail metric | minimum detectable effect
+"""
+
+
+def _get_prompt(site_type: str) -> str:
+    return PROMPT_ECOMMERCE if site_type == "E-commerce" else PROMPT_SAAS
 
 
 # ----------------------------
@@ -521,18 +592,20 @@ def fetch_pagespeed(url: str) -> tuple[str, dict]:
     return "\n".join(lines), raw
 
 
-def run_ai_text(text: str, pagespeed: str = "") -> str:
+def run_ai_text(text: str, pagespeed: str = "", site_type: str = "SaaS") -> str:
     client = get_openai_client()
+    prompt = _get_prompt(site_type)
     extra = f"\n\n{pagespeed}" if pagespeed else ""
     response = client.responses.create(
         model=MODEL_TEXT,
-        input=f"{PROMPT}\n\n{text[:MAX_CHARS]}{extra}",
+        input=f"{prompt}\n\n{text[:MAX_CHARS]}{extra}",
     )
     return response.output_text
 
 
-def run_ai_vision(text_context: str, shots: list, pagespeed: str = "") -> str:
+def run_ai_vision(text_context: str, shots: list, pagespeed: str = "", site_type: str = "SaaS") -> str:
     client = get_openai_client()
+    prompt = _get_prompt(site_type)
 
     visited_lines = []
     for s in shots:
@@ -547,7 +620,7 @@ def run_ai_vision(text_context: str, shots: list, pagespeed: str = "") -> str:
         {
             "type": "input_text",
             "text": (
-                f"{PROMPT}\n\n"
+                f"{prompt}\n\n"
                 f"Visited pages (use these URLs when referencing evidence):\n"
                 + "\n".join(visited_lines)
             ),
@@ -764,6 +837,18 @@ def _audit_filename(url: str, suffix: str) -> str:
 st.set_page_config(page_title="AI CRO Audit Tool", page_icon="📈")
 st.title("📈 AI CRO Audit Tool")
 
+site_type = st.radio(
+    "Site type",
+    options=["SaaS", "E-commerce"],
+    horizontal=True,
+    help=(
+        "**SaaS** — optimises for trial/demo conversion, pricing plan clarity, signup friction, "
+        "and software-buyer trust signals.\n\n"
+        "**E-commerce** — optimises for Add-to-Cart / Buy Now conversion, product clarity, "
+        "price anchoring, shopper trust (reviews, returns, shipping), and cart friction."
+    ),
+)
+
 tab1, tab2 = st.tabs(["URL Audit", "Vision (Auto)"])
 
 
@@ -789,14 +874,17 @@ with tab1:
             st.stop()
 
         with st.spinner("Analyzing with AI..."):
-            result = run_ai_text(content, pagespeed=ps_context)
+            result = run_ai_text(content, pagespeed=ps_context, site_type=site_type)
 
         st.session_state["text_result"] = result
         st.session_state["text_url"] = url
         st.session_state["text_scraped_pages"] = scraped_pages
         st.session_state["text_ps_raw"] = ps_raw
+        st.session_state["text_site_type"] = site_type
 
     if "text_result" in st.session_state:
+        if "text_site_type" in st.session_state:
+            st.caption(f"Audit type: {st.session_state['text_site_type']}")
         if "text_scraped_pages" in st.session_state:
             pages = st.session_state["text_scraped_pages"]
             st.info(f"Scraped {len(pages)} page(s): {', '.join(pages)}")
@@ -865,15 +953,18 @@ with tab2:
                     st.info(f"Text scraped from {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
 
         with st.spinner("Running vision audit (gpt-4.1)..."):
-            result = run_ai_vision(text_context, shots, pagespeed=ps_context)
+            result = run_ai_vision(text_context, shots, pagespeed=ps_context, site_type=site_type)
 
         st.session_state["vision_result"] = result
         st.session_state["vision_result_url"] = vurl
         st.session_state["vision_shots"] = shots
         st.session_state["vision_scraped_pages"] = scraped_pages
         st.session_state["vision_ps_raw"] = ps_raw
+        st.session_state["vision_site_type"] = site_type
 
     if "vision_result" in st.session_state:
+        if "vision_site_type" in st.session_state:
+            st.caption(f"Audit type: {st.session_state['vision_site_type']}")
         if "vision_scraped_pages" in st.session_state and st.session_state["vision_scraped_pages"]:
             pages = st.session_state["vision_scraped_pages"]
             st.info(f"Text scraped from {len(pages)} page(s): {', '.join(pages)}")
