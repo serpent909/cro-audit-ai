@@ -42,6 +42,19 @@ MODEL_VISION = "gpt-4.1"  # full model for vision quality
 MAX_CHARS = 12000
 MAX_IMAGES = 3
 
+PAGESPEED_API = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+
+# Core Web Vitals thresholds for colour-coding in the UI
+CWV_THRESHOLDS = {
+    "lcp":          {"good": 2500,  "poor": 4000,  "unit": "ms", "label": "LCP"},
+    "fcp":          {"good": 1800,  "poor": 3000,  "unit": "ms", "label": "FCP"},
+    "cls":          {"good": 0.1,   "poor": 0.25,  "unit": "",   "label": "CLS"},
+    "tbt":          {"good": 200,   "poor": 600,   "unit": "ms", "label": "TBT"},
+    "inp":          {"good": 200,   "poor": 500,   "unit": "ms", "label": "INP"},
+    "ttfb":         {"good": 800,   "poor": 1800,  "unit": "ms", "label": "TTFB"},
+    "speed_index":  {"good": 3400,  "poor": 5800,  "unit": "ms", "label": "Speed Index"},
+}
+
 SCRAPE_PATHS = [
     "",
     "/pricing",
@@ -64,6 +77,7 @@ NON-NEGOTIABLE RULES
 - If CTA candidates exist, list them and evaluate them (do not claim no CTAs).
 - Always evaluate what is visible ABOVE THE FOLD (without scrolling) separately from below-the-fold content.
 - Compare CTAs and messaging across pages — flag any inconsistencies between the homepage promise and pricing/signup pages.
+- If PageSpeed data is provided, use it to inform the Friction and Mobile scorecard scores and flag any Poor Core Web Vitals (LCP >4s, CLS >0.25, INP >500ms, TTFB >1.8s) as concrete conversion issues with their impact on bounce rate and user experience.
 
 OUTPUT FORMAT (use headings exactly)
 
@@ -292,16 +306,129 @@ def extract_text_from_url(url: str) -> tuple[str, list[str]]:
     return combined, scraped_pages
 
 
-def run_ai_text(text: str) -> str:
+def _cwv_label(key: str, raw_value) -> str:
+    """Return display string with Good/Needs improvement/Poor label."""
+    if raw_value is None:
+        return "N/A"
+    t = CWV_THRESHOLDS.get(key)
+    if not t:
+        return str(raw_value)
+    try:
+        v = float(raw_value)
+    except (TypeError, ValueError):
+        return str(raw_value)
+    if v <= t["good"]:
+        status = "Good"
+    elif v <= t["poor"]:
+        status = "Needs improvement"
+    else:
+        status = "Poor"
+    display = f"{v / 1000:.2f} s" if t["unit"] == "ms" and v > 10 else str(v)
+    return f"{display} ({status})"
+
+
+def _parse_lhr(lhr: dict) -> dict:
+    """Extract key metrics from a Lighthouse result dict."""
+    audits = lhr.get("audits", {})
+    perf_score = lhr.get("categories", {}).get("performance", {}).get("score")
+
+    def ms(key: str):
+        n = audits.get(key, {}).get("numericValue")
+        return round(n) if n is not None else None
+
+    def display(key: str):
+        return audits.get(key, {}).get("displayValue", "N/A")
+
+    return {
+        "score": int(perf_score * 100) if perf_score is not None else None,
+        "lcp_ms":       ms("largest-contentful-paint"),
+        "fcp_ms":       ms("first-contentful-paint"),
+        "cls_raw":      audits.get("cumulative-layout-shift", {}).get("numericValue"),
+        "tbt_ms":       ms("total-blocking-time"),
+        "inp_ms":       ms("interaction-to-next-paint"),
+        "ttfb_ms":      ms("server-response-time"),
+        "speed_ms":     ms("speed-index"),
+        # display strings (already formatted by Lighthouse)
+        "lcp":          display("largest-contentful-paint"),
+        "fcp":          display("first-contentful-paint"),
+        "cls":          display("cumulative-layout-shift"),
+        "tbt":          display("total-blocking-time"),
+        "inp":          display("interaction-to-next-paint"),
+        "ttfb":         display("server-response-time"),
+        "speed_index":  display("speed-index"),
+    }
+
+
+def fetch_pagespeed(url: str) -> tuple[str, dict]:
+    """
+    Fetch PageSpeed Insights for mobile + desktop in parallel.
+    Returns (ai_context_str, {mobile: metrics, desktop: metrics}).
+    On total failure returns ("", {}).
+    """
+    api_key = os.getenv("PAGESPEED_API_KEY", "")
+
+    def _fetch(strategy: str) -> tuple[str, dict | None]:
+        params = {"url": url, "strategy": strategy, "category": "performance"}
+        if api_key:
+            params["key"] = api_key
+        try:
+            r = requests.get(PAGESPEED_API, params=params, timeout=60)
+            if r.status_code != 200:
+                # Embed the HTTP error so caller can surface it
+                return strategy, {"_http_error": r.status_code}
+            data = r.json()
+            lhr = data.get("lighthouseResult", {})
+            return strategy, _parse_lhr(lhr) if lhr else None
+        except Exception as e:
+            return strategy, {"_http_error": str(e)}
+
+    raw: dict[str, dict] = {}
+    psi_errors: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(_fetch, s) for s in ("mobile", "desktop")]
+        for future in as_completed(futures):
+            strategy, metrics = future.result()
+            if metrics and "_http_error" not in metrics:
+                raw[strategy] = metrics
+            else:
+                err = (metrics or {}).get("_http_error", "no data returned")
+                psi_errors[strategy] = str(err)
+
+    if not raw:
+        return "", {"_errors": psi_errors}
+
+    raw["_errors"] = psi_errors
+
+    lines = ["PAGE SPEED (Google PageSpeed Insights — include in scorecard and mobile section)"]
+    for strategy in ("mobile", "desktop"):
+        m = raw.get(strategy)
+        if not m:
+            lines.append(f"\n{strategy.capitalize()}: data unavailable")
+            continue
+        score = m["score"] if m["score"] is not None else "N/A"
+        lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100")
+        lines.append(f"  LCP:         {m['lcp']}  (Good <2.5s, Poor >4s)")
+        lines.append(f"  FCP:         {m['fcp']}  (Good <1.8s, Poor >3s)")
+        lines.append(f"  CLS:         {m['cls']}  (Good <0.1, Poor >0.25)")
+        lines.append(f"  TBT:         {m['tbt']}  (Good <200ms, Poor >600ms)")
+        lines.append(f"  INP:         {m['inp']}  (Good <200ms, Poor >500ms)")
+        lines.append(f"  TTFB:        {m['ttfb']}  (Good <0.8s, Poor >1.8s)")
+        lines.append(f"  Speed Index: {m['speed_index']}")
+
+    return "\n".join(lines), raw
+
+
+def run_ai_text(text: str, pagespeed: str = "") -> str:
     client = get_openai_client()
+    extra = f"\n\n{pagespeed}" if pagespeed else ""
     response = client.responses.create(
         model=MODEL_TEXT,
-        input=f"{PROMPT}\n\n{text[:MAX_CHARS]}",
+        input=f"{PROMPT}\n\n{text[:MAX_CHARS]}{extra}",
     )
     return response.output_text
 
 
-def run_ai_vision(text_context: str, shots: list) -> str:
+def run_ai_vision(text_context: str, shots: list, pagespeed: str = "") -> str:
     client = get_openai_client()
 
     visited_lines = []
@@ -323,6 +450,9 @@ def run_ai_vision(text_context: str, shots: list) -> str:
             ),
         }
     ]
+
+    if pagespeed:
+        content.append({"type": "input_text", "text": f"\n\n{pagespeed}"})
 
     if text_context:
         content.append(
@@ -424,6 +554,102 @@ def render_shots_gallery(shots: list):
         st.divider()
 
 
+METRIC_HELP = {
+    "lcp":  ("Largest Contentful Paint",  "How long until the biggest visible element (hero image, headline) fully loads. "
+                                           "Slow LCP is the #1 reason visitors assume a page is broken and leave. "
+                                           "🟢 Good: <2.5 s  🟡 Needs work: 2.5–4 s  🔴 Poor: >4 s"),
+    "fcp":  ("First Contentful Paint",    "Time until any content first appears on screen. "
+                                           "Sets the visitor's initial perception of speed — even a spinner counts. "
+                                           "🟢 Good: <1.8 s  🟡 Needs work: 1.8–3 s  🔴 Poor: >3 s"),
+    "cls":  ("Cumulative Layout Shift",   "Measures how much page elements jump around while loading. "
+                                           "A high score means buttons/links move just as users try to click them, causing mis-clicks and frustration. "
+                                           "🟢 Good: <0.1  🟡 Needs work: 0.1–0.25  🔴 Poor: >0.25"),
+    "tbt":  ("Total Blocking Time",       "Total time the page is frozen and unresponsive to clicks after the first content loads. "
+                                           "High TBT makes the page feel laggy even if it looks loaded. Usually caused by heavy JavaScript. "
+                                           "🟢 Good: <200 ms  🟡 Needs work: 200–600 ms  🔴 Poor: >600 ms"),
+    "inp":  ("Interaction to Next Paint", "How fast the page visually responds when a user clicks, taps, or types. "
+                                           "A poor INP makes forms and buttons feel broken or unresponsive. "
+                                           "🟢 Good: <200 ms  🟡 Needs work: 200–500 ms  🔴 Poor: >500 ms"),
+    "ttfb": ("Time to First Byte",        "How quickly the server sends back the first byte of data after a request. "
+                                           "A slow TTFB delays everything — no content can load until this completes. Usually a hosting or caching issue. "
+                                           "🟢 Good: <0.8 s  🟡 Needs work: 0.8–1.8 s  🔴 Poor: >1.8 s"),
+    "speed_index": ("Speed Index",        "How quickly the page content is visually filled in during load. "
+                                           "Unlike LCP, this captures the overall visual progress, not just one element. "
+                                           "🟢 Good: <3.4 s  🟡 Needs work: 3.4–5.8 s  🔴 Poor: >5.8 s"),
+}
+
+PERF_SCORE_HELP = ("Overall Performance Score",
+                   "Google Lighthouse score (0–100) combining all speed metrics with weighted importance. "
+                   "🟢 90–100: Fast  🟡 50–89: Needs improvement  🔴 0–49: Slow")
+
+
+def render_pagespeed(raw: dict):
+    """Render a compact PageSpeed metrics card for mobile + desktop."""
+    if not raw:
+        return
+
+    errors = raw.get("_errors", {})
+    strategies = [s for s in ("mobile", "desktop") if s in raw]
+
+    if not strategies:
+        if errors:
+            msgs = ", ".join(f"{k}: {v}" for k, v in errors.items())
+            st.warning(
+                f"PageSpeed data unavailable ({msgs}). "
+                "The free API allows ~400 req/day per IP. "
+                "Add `PAGESPEED_API_KEY=your-key` to `.env` for higher limits."
+            )
+        else:
+            st.warning("PageSpeed data unavailable.")
+        return
+
+    def score_colour(score):
+        if score is None: return "⚪"
+        if score >= 90:   return "🟢"
+        if score >= 50:   return "🟡"
+        return "🔴"
+
+    def cwv_colour(key: str, val):
+        if val is None: return "⚪"
+        t = CWV_THRESHOLDS.get(key, {})
+        if not t: return "⚪"
+        if val <= t["good"]: return "🟢"
+        if val <= t["poor"]: return "🟡"
+        return "🔴"
+
+    cols = st.columns(len(strategies))
+    for col, strategy in zip(cols, strategies):
+        m = raw[strategy]
+        score = m.get("score")
+        with col:
+            st.metric(
+                label=f"{strategy.capitalize()} — Performance Score",
+                value=f"{score}/100" if score is not None else "N/A",
+                delta=score_colour(score),
+                delta_color="off",
+                help=f"**{PERF_SCORE_HELP[0]}** — {PERF_SCORE_HELP[1]}",
+            )
+            for key, num_key, display_key in [
+                ("lcp",          "lcp_ms",  "lcp"),
+                ("fcp",          "fcp_ms",  "fcp"),
+                ("cls",          "cls_raw", "cls"),
+                ("tbt",          "tbt_ms",  "tbt"),
+                ("inp",          "inp_ms",  "inp"),
+                ("ttfb",         "ttfb_ms", "ttfb"),
+                ("speed_index",  "speed_ms","speed_index"),
+            ]:
+                label_name, help_text = METRIC_HELP[key]
+                icon = cwv_colour(key, m.get(num_key))
+                st.metric(
+                    label=f"{icon} {label_name}",
+                    value=m.get(display_key, "N/A"),
+                    help=f"**{label_name}** — {help_text}",
+                )
+
+    if errors:
+        st.caption(f"Note: {', '.join(errors.keys())} data unavailable ({', '.join(errors.values())})")
+
+
 def _audit_filename(url: str, suffix: str) -> str:
     slug = re.sub(r"https?://", "", url).rstrip("/").replace("/", "-").replace(".", "-")
     return f"cro-audit-{suffix}-{slug}.md"
@@ -446,8 +672,12 @@ with tab1:
             st.error("Please enter a valid URL starting with https://")
             st.stop()
 
-        with st.spinner("Extracting pages in parallel..."):
-            content, scraped_pages = extract_text_from_url(url)
+        with st.spinner("Extracting pages + fetching PageSpeed data..."):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                f_text = executor.submit(extract_text_from_url, url)
+                f_psi  = executor.submit(fetch_pagespeed, url)
+            content, scraped_pages = f_text.result()
+            ps_context, ps_raw = f_psi.result()
 
         if scraped_pages:
             st.info(f"Scraped {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
@@ -456,16 +686,21 @@ with tab1:
             st.stop()
 
         with st.spinner("Analyzing with AI..."):
-            result = run_ai_text(content)
+            result = run_ai_text(content, pagespeed=ps_context)
 
         st.session_state["text_result"] = result
         st.session_state["text_url"] = url
         st.session_state["text_scraped_pages"] = scraped_pages
+        st.session_state["text_ps_raw"] = ps_raw
 
     if "text_result" in st.session_state:
         if "text_scraped_pages" in st.session_state:
             pages = st.session_state["text_scraped_pages"]
             st.info(f"Scraped {len(pages)} page(s): {', '.join(pages)}")
+
+        if "text_ps_raw" in st.session_state:
+            with st.expander("PageSpeed Insights", expanded=True):
+                render_pagespeed(st.session_state["text_ps_raw"])
 
         st.subheader("Results")
         st.write(st.session_state["text_result"])
@@ -509,24 +744,40 @@ with tab2:
 
         text_context = ""
         scraped_pages = []
-        if include_text:
-            with st.spinner("Extracting text from pages in parallel..."):
-                text_context, scraped_pages = extract_text_from_url(vurl)
+        ps_context = ""
+        ps_raw: dict = {}
+
+        with st.spinner("Extracting text + fetching PageSpeed data..."):
+            tasks: list = []
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                f_psi = executor.submit(fetch_pagespeed, vurl)
+                if include_text:
+                    f_text = executor.submit(extract_text_from_url, vurl)
+                    tasks.append(f_text)
+                tasks.append(f_psi)
+            ps_context, ps_raw = f_psi.result()
+            if include_text:
+                text_context, scraped_pages = f_text.result()
                 if scraped_pages:
                     st.info(f"Text scraped from {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
 
         with st.spinner("Running vision audit (gpt-4.1)..."):
-            result = run_ai_vision(text_context, shots)
+            result = run_ai_vision(text_context, shots, pagespeed=ps_context)
 
         st.session_state["vision_result"] = result
         st.session_state["vision_result_url"] = vurl
         st.session_state["vision_shots"] = shots
         st.session_state["vision_scraped_pages"] = scraped_pages
+        st.session_state["vision_ps_raw"] = ps_raw
 
     if "vision_result" in st.session_state:
         if "vision_scraped_pages" in st.session_state and st.session_state["vision_scraped_pages"]:
             pages = st.session_state["vision_scraped_pages"]
             st.info(f"Text scraped from {len(pages)} page(s): {', '.join(pages)}")
+
+        if "vision_ps_raw" in st.session_state:
+            with st.expander("PageSpeed Insights", expanded=True):
+                render_pagespeed(st.session_state["vision_ps_raw"])
 
         if "vision_shots" in st.session_state:
             render_shots_gallery(st.session_state["vision_shots"])
