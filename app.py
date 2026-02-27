@@ -6,7 +6,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 import streamlit as st
@@ -39,7 +39,7 @@ except Exception:
 MODEL_TEXT = "gpt-4.1-mini"
 MODEL_VISION = "gpt-4.1"  # full model for vision quality
 
-MAX_CHARS = 12000
+MAX_CHARS = 20000
 MAX_IMAGES = 3
 
 PAGESPEED_API = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
@@ -66,6 +66,22 @@ SCRAPE_PATHS = [
     "/signup",
     "/register",
 ]
+
+# Keywords used to score homepage links during URL discovery
+DISCOVERY_HINTS = [
+    # Pricing / subscription signals
+    "pricing", "plans", "plan", "subscription", "subscriptions", "billing",
+    "upgrade", "tiers", "compare",
+    # E-commerce / purchase signals
+    "shop", "store", "product", "products", "collection", "collections",
+    "buy", "purchase", "order", "packages", "package", "bundle", "bundles",
+    "offer", "offers",
+]
+DISCOVERY_DEBOOST = [
+    "blog", "docs", "help", "support", "changelog", "status",
+    "careers", "jobs", "news", "press", "privacy", "terms", "faq", "cookie",
+]
+MAX_DISCOVERED = 8  # max additional pages from link discovery
 
 PROMPT = """
 You are a senior CRO (Conversion Rate Optimization) consultant. Produce an audit that is specific, evidence-based, and action-oriented.
@@ -171,13 +187,75 @@ def is_valid_url(url: str) -> bool:
         return False
 
 
-def extract_from_single_page(page_url: str, headers: dict) -> str | None:
-    try:
-        r = requests.get(page_url, headers=headers, timeout=15)
-        if r.status_code != 200:
-            return None
+def discover_urls_from_homepage(homepage_html: str, base_url: str) -> list[str]:
+    """
+    Parse homepage links and return candidate URLs ranked by pricing/shop relevance.
+    Nav/header links receive a base score so they're included even without keyword matches —
+    this catches non-standard pricing URLs like /pages/our-creams on Shopify stores.
+    """
+    soup = BeautifulSoup(homepage_html, "lxml")
+    base_netloc = urlparse(base_url).netloc.lower()
+    base_norm = base_url.rstrip("/")
 
-        html = r.text
+    # Collect raw hrefs from nav/header elements for bonus scoring
+    nav_hrefs: set[str] = set()
+    for container in soup.find_all(["nav", "header"]):
+        for a in container.find_all("a", href=True):
+            nav_hrefs.add((a.get("href") or "").strip())
+
+    candidates: dict[str, int] = {}
+
+    for a in soup.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
+            continue
+
+        abs_url = urljoin(base_url, href)
+        parsed = urlparse(abs_url)
+
+        if parsed.netloc.lower() != base_netloc:
+            continue
+        if any(parsed.path.lower().endswith(ext) for ext in (".pdf", ".png", ".jpg", ".jpeg", ".zip", ".svg")):
+            continue
+
+        # Normalise: drop fragment and query string
+        norm = parsed._replace(fragment="", query="").geturl().rstrip("/")
+        if norm == base_norm:
+            continue  # skip homepage itself
+
+        text = a.get_text(" ", strip=True).lower()
+        path = parsed.path.lower().strip("/")
+        combined = norm.lower() + " " + text
+
+        score = 0
+        if href in nav_hrefs:
+            score += 3  # nav baseline: nav links are included unless deboost wins
+        for hint in DISCOVERY_HINTS:
+            if hint in combined:
+                score += 4
+        for bad in DISCOVERY_DEBOOST:
+            if bad in combined:
+                score -= 4
+
+        # Extra bonus for known e-commerce/pricing exact paths
+        if path in ("pricing", "plans", "shop", "products", "collections", "store", "buy"):
+            score += 6
+
+        if score > 0:
+            candidates[norm] = max(score, candidates.get(norm, 0))
+
+    ranked = sorted(candidates.items(), key=lambda kv: kv[1], reverse=True)
+    return [u for u, _ in ranked[:MAX_DISCOVERED]]
+
+
+def extract_from_single_page(page_url: str, headers: dict, html: str | None = None) -> str | None:
+    try:
+        if html is None:
+            r = requests.get(page_url, headers=headers, timeout=15)
+            if r.status_code != 200:
+                return None
+            html = r.text
+
         full = BeautifulSoup(html, "lxml")
 
         # Meta signals
@@ -276,27 +354,52 @@ def extract_text_from_url(url: str) -> tuple[str, list[str]]:
     headers = {"User-Agent": "Mozilla/5.0"}
     base = url.rstrip("/")
 
-    def fetch(path: str) -> tuple[str, str | None]:
-        page_url = base + path
+    # Phase 1: Fetch homepage once — used for both discovery and content extraction
+    homepage_html: str | None = None
+    try:
+        r = requests.get(base, headers=headers, timeout=15)
+        if r.status_code == 200:
+            homepage_html = r.text
+    except Exception:
+        pass
+
+    # Phase 2: Discover pricing/shop/product URLs from homepage navigation links
+    discovered: list[str] = []
+    if homepage_html:
+        discovered = discover_urls_from_homepage(homepage_html, base)
+
+    # Phase 3: Build deduped URL list
+    # Hardcoded paths (excluding "" since homepage already fetched), then discovered
+    other_hardcoded = [base + p for p in SCRAPE_PATHS if p != ""]
+    all_other = list(dict.fromkeys(other_hardcoded + discovered))
+
+    def fetch(page_url: str) -> tuple[str, str | None]:
         return page_url, extract_from_single_page(page_url, headers)
 
-    # Fetch all paths in parallel
     results: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(fetch, p): p for p in SCRAPE_PATHS}
+
+    # Homepage content from cached HTML (no extra request)
+    if homepage_html:
+        hp_content = extract_from_single_page(base, headers, html=homepage_html)
+        if hp_content:
+            results[base] = hp_content
+
+    # Fetch remaining pages in parallel
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(fetch, u): u for u in all_other}
         for future in as_completed(futures):
             page_url, content = future.result()
             if content:
                 results[page_url] = content
 
-    # Reassemble in original path order
+    # Assemble in stable order: homepage → hardcoded paths → discovered
+    ordered = [base] + all_other
     bundles = []
     scraped_pages = []
-    for p in SCRAPE_PATHS:
-        page_url = base + p
-        if page_url in results:
-            bundles.append(results[page_url])
-            scraped_pages.append(page_url)
+    for u in ordered:
+        if u in results and u not in scraped_pages:
+            bundles.append(results[u])
+            scraped_pages.append(u)
 
     if not bundles:
         return "No content extracted.", []
