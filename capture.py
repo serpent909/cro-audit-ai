@@ -307,6 +307,35 @@ def main():
                 continue
 
         context.close()
+
+        # Mobile screenshot — always homepage only, labelled so the AI knows
+        mobile_context = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            user_agent=(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+            ),
+            is_mobile=True,
+            has_touch=True,
+        )
+        mobile_page = mobile_context.new_page()
+        try:
+            final_url_m, title_m, elapsed_m, notes_m = _goto_robust(mobile_page, homepage)
+            png_m = mobile_page.screenshot(full_page=True, type="png")
+            shots.append({
+                "url": homepage,
+                "final_url": final_url_m,
+                "title": title_m,
+                "notes": f"mobile-viewport-390px{';' + notes_m if notes_m else ''}",
+                "image": png_bytes_to_jpeg_data_url(png_m),
+                "elapsed_ms": elapsed_m,
+            })
+        except Exception as e:
+            errors.append(f"mobile_screenshot_failed:{e}")
+            print(f"[capture.py] Mobile screenshot failed: {e}", file=sys.stderr)
+        finally:
+            mobile_context.close()
+
         browser.close()
 
     # Back-compat keys (so your app doesn't break):
