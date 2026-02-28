@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,13 +37,123 @@ except Exception:
 # ----------------------------
 # Config
 # ----------------------------
-MODEL_TEXT = "gpt-4.1-mini"
-MODEL_VISION = "gpt-4.1"  # full model for vision quality
+MODEL_TEXT = "gpt-5.2"
+MODEL_VISION = "gpt-5.2"
 
 MAX_CHARS = 20000
 MAX_IMAGES = 3
 
 PAGESPEED_API = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+PSI_RUNS = 3  # parallel runs per strategy; median taken to reduce variability
+
+# Injected once at app start — polishes the AI-generated markdown report
+_REPORT_CSS = """<style>
+/* ── section headings ─────────────────────────────────── */
+[data-testid="stMarkdownContainer"] h2 {
+    margin-top: 2rem !important;
+    margin-bottom: 0.55rem !important;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid rgba(49, 51, 63, 0.12);
+}
+[data-testid="stMarkdownContainer"] h3 {
+    margin-top: 1.4rem !important;
+    margin-bottom: 0.3rem !important;
+}
+[data-testid="stMarkdownContainer"] h4 {
+    margin-top: 1rem !important;
+    margin-bottom: 0.2rem !important;
+}
+/* ── body copy ────────────────────────────────────────── */
+[data-testid="stMarkdownContainer"] p {
+    line-height: 1.75 !important;
+    margin-bottom: 0.7rem !important;
+}
+[data-testid="stMarkdownContainer"] ul,
+[data-testid="stMarkdownContainer"] ol {
+    line-height: 1.75 !important;
+    margin-bottom: 0.75rem !important;
+    padding-left: 1.4rem !important;
+}
+[data-testid="stMarkdownContainer"] li {
+    margin-bottom: 0.25rem !important;
+}
+[data-testid="stMarkdownContainer"] li > ul,
+[data-testid="stMarkdownContainer"] li > ol {
+    margin-bottom: 0.2rem !important;
+}
+/* ── scorecard table ──────────────────────────────────── */
+[data-testid="stMarkdownContainer"] table {
+    margin-top: 0.6rem !important;
+    margin-bottom: 1.25rem !important;
+    width: 100%;
+    border-collapse: collapse;
+}
+[data-testid="stMarkdownContainer"] th {
+    background-color: rgba(49, 51, 63, 0.06) !important;
+    text-align: left;
+    padding: 0.45rem 0.75rem !important;
+}
+[data-testid="stMarkdownContainer"] td {
+    padding: 0.4rem 0.75rem !important;
+    vertical-align: top;
+}
+[data-testid="stMarkdownContainer"] tr:nth-child(even) td {
+    background-color: rgba(49, 51, 63, 0.02) !important;
+}
+/* ── horizontal rules ─────────────────────────────────── */
+[data-testid="stMarkdownContainer"] hr {
+    margin: 1.75rem 0 !important;
+    border-color: rgba(49, 51, 63, 0.15) !important;
+}
+/* ── strong / bold ────────────────────────────────────── */
+[data-testid="stMarkdownContainer"] strong {
+    font-weight: 600 !important;
+}
+/* ── inline code ──────────────────────────────────────── */
+[data-testid="stMarkdownContainer"] code {
+    padding: 0.15em 0.35em !important;
+    border-radius: 4px !important;
+}
+/* ── button label reset (prevent p styles leaking in) ─── */
+[data-testid="stBaseButton-primary"] p,
+[data-testid="stBaseButton-secondary"] p,
+button p {
+    line-height: normal !important;
+    margin-bottom: 0 !important;
+}
+/* ── custom tooltip for PageSpeed metric rows ────────── */
+[data-testid="stMarkdownContainer"] {
+    overflow: visible !important;
+}
+.cro-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.cro-tip-box {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.82rem;
+    color: #374151;
+    line-height: 1.65;
+    min-width: 220px;
+    max-width: 300px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    z-index: 9999;
+    white-space: normal;
+    pointer-events: none;
+}
+.cro-tip:hover .cro-tip-box {
+    display: block;
+}
+</style>"""
 
 # Core Web Vitals thresholds for colour-coding in the UI
 CWV_THRESHOLDS = {
@@ -251,6 +362,14 @@ def get_openai_client() -> OpenAI:
 # ----------------------------
 # Helpers
 # ----------------------------
+def normalise_url(url: str) -> str:
+    """Prepend https:// if no scheme is present."""
+    url = url.strip()
+    if url and not re.match(r"^https?://", url, re.I):
+        url = "https://" + url
+    return url
+
+
 def is_valid_url(url: str) -> bool:
     try:
         p = urlparse(url)
@@ -590,19 +709,20 @@ def _parse_lhr(lhr: dict) -> dict:
 def fetch_pagespeed(url: str) -> tuple[str, dict]:
     """
     Fetch PageSpeed Insights for mobile + desktop in parallel.
+    Runs PSI_RUNS times per strategy concurrently and takes the median of each
+    numeric metric to reduce Lighthouse variability.
     Returns (ai_context_str, {mobile: metrics, desktop: metrics}).
     On total failure returns ("", {}).
     """
     api_key = os.getenv("PAGESPEED_API_KEY", "")
 
-    def _fetch(strategy: str) -> tuple[str, dict | None]:
+    def _fetch(strategy: str, _: int) -> tuple[str, dict | None]:
         params = {"url": url, "strategy": strategy, "category": "performance"}
         if api_key:
             params["key"] = api_key
         try:
             r = requests.get(PAGESPEED_API, params=params, timeout=60)
             if r.status_code != 200:
-                # Embed the HTTP error so caller can surface it
                 return strategy, {"_http_error": r.status_code}
             data = r.json()
             lhr = data.get("lighthouseResult", {})
@@ -610,31 +730,88 @@ def fetch_pagespeed(url: str) -> tuple[str, dict]:
         except Exception as e:
             return strategy, {"_http_error": str(e)}
 
-    raw: dict[str, dict] = {}
+    def _median_metrics(runs: list[dict]) -> dict:
+        """Compute element-wise median across PSI runs, rebuild display strings."""
+        def med(key):
+            vals = [r[key] for r in runs if r.get(key) is not None]
+            return statistics.median(vals) if vals else None
+
+        def fmt_ms(n):
+            if n is None:
+                return "N/A"
+            return f"{n / 1000:.2f} s" if n >= 1000 else f"{round(n)} ms"
+
+        score_vals = [r["score"] for r in runs if r.get("score") is not None]
+        score = round(statistics.median(score_vals)) if score_vals else None
+
+        lcp_ms   = med("lcp_ms")
+        fcp_ms   = med("fcp_ms")
+        cls_raw  = med("cls_raw")
+        tbt_ms   = med("tbt_ms")
+        inp_ms   = med("inp_ms")
+        ttfb_ms  = med("ttfb_ms")
+        speed_ms = med("speed_ms")
+
+        return {
+            "score":       score,
+            "lcp_ms":      lcp_ms,
+            "fcp_ms":      fcp_ms,
+            "cls_raw":     cls_raw,
+            "tbt_ms":      tbt_ms,
+            "inp_ms":      inp_ms,
+            "ttfb_ms":     ttfb_ms,
+            "speed_ms":    speed_ms,
+            # recompute display strings from median numerics
+            "lcp":         fmt_ms(lcp_ms),
+            "fcp":         fmt_ms(fcp_ms),
+            "cls":         f"{cls_raw:.3f}" if cls_raw is not None else "N/A",
+            "tbt":         fmt_ms(tbt_ms),
+            "inp":         fmt_ms(inp_ms),
+            "ttfb":        fmt_ms(ttfb_ms),
+            "speed_index": fmt_ms(speed_ms),
+            "_run_count":  len(runs),
+        }
+
+    # PSI_RUNS requests per strategy all fire in parallel (2 × PSI_RUNS total)
+    runs_by_strategy: dict[str, list[dict]] = {"mobile": [], "desktop": []}
     psi_errors: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(_fetch, s) for s in ("mobile", "desktop")]
+
+    with ThreadPoolExecutor(max_workers=PSI_RUNS * 2) as executor:
+        futures = [
+            executor.submit(_fetch, s, i)
+            for s in ("mobile", "desktop")
+            for i in range(PSI_RUNS)
+        ]
         for future in as_completed(futures):
             strategy, metrics = future.result()
             if metrics and "_http_error" not in metrics:
-                raw[strategy] = metrics
+                runs_by_strategy[strategy].append(metrics)
             else:
                 err = (metrics or {}).get("_http_error", "no data returned")
-                psi_errors[strategy] = str(err)
+                psi_errors.setdefault(strategy, str(err))
+
+    raw: dict[str, dict] = {}
+    for strategy, runs in runs_by_strategy.items():
+        if runs:
+            raw[strategy] = _median_metrics(runs)
 
     if not raw:
         return "", {"_errors": psi_errors}
 
     raw["_errors"] = psi_errors
 
-    lines = ["PAGE SPEED (Google PageSpeed Insights — include in scorecard and mobile section)"]
+    lines = [
+        f"PAGE SPEED (Google PageSpeed Insights — median of {PSI_RUNS} runs — "
+        "include in scorecard and mobile section)"
+    ]
     for strategy in ("mobile", "desktop"):
         m = raw.get(strategy)
         if not m:
             lines.append(f"\n{strategy.capitalize()}: data unavailable")
             continue
+        n = m.get("_run_count", PSI_RUNS)
         score = m["score"] if m["score"] is not None else "N/A"
-        lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100")
+        lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100 (median of {n} runs)")
         lines.append(f"  LCP:         {m['lcp']}  (Good <2.5s, Poor >4s)")
         lines.append(f"  FCP:         {m['fcp']}  (Good <1.8s, Poor >3s)")
         lines.append(f"  CLS:         {m['cls']}  (Good <0.1, Poor >0.25)")
@@ -847,34 +1024,82 @@ def render_pagespeed(raw: dict):
         if val <= t["poor"]: return "🟡"
         return "🔴"
 
+    _score_palette = {
+        "🟢": ("#e8f9f0", "#34a853"),
+        "🟡": ("#fef9e5", "#f9ab00"),
+        "🔴": ("#fde8e8", "#e53935"),
+        "⚪": ("#f4f4f4", "#9e9e9e"),
+    }
+
     cols = st.columns(len(strategies))
     for col, strategy in zip(cols, strategies):
         m = raw[strategy]
         score = m.get("score")
+        run_count = m.get("_run_count", PSI_RUNS)
+        icon = score_colour(score)
+        bg, accent = _score_palette.get(icon, ("#f4f4f4", "#9e9e9e"))
+        score_display = f"{score}/100" if score is not None else "N/A"
+
         with col:
-            st.metric(
-                label=f"{strategy.capitalize()} — Performance Score",
-                value=f"{score}/100" if score is not None else "N/A",
-                delta=score_colour(score),
-                delta_color="off",
-                help=f"**{PERF_SCORE_HELP[0]}** — {PERF_SCORE_HELP[1]}",
+            # ── Primary score card (visually dominant) ──────────────
+            st.markdown(
+                f"""<div style="background:{bg};border-left:4px solid {accent};
+                    border-radius:6px;padding:0.85rem 1rem 0.8rem;margin-bottom:1rem;">
+                  <p style="margin:0 0 0.25rem;font-size:0.7rem;font-weight:700;
+                             text-transform:uppercase;letter-spacing:0.06em;color:#555;">
+                    {icon}&nbsp;{strategy.capitalize()} Performance Score
+                  </p>
+                  <p style="margin:0;font-size:2.4rem;font-weight:800;
+                             line-height:1;color:#111;">
+                    {score_display}
+                  </p>
+                  <p style="margin:0.3rem 0 0;font-size:0.68rem;color:#777;">
+                    Median of {run_count} Lighthouse runs
+                  </p>
+                </div>""",
+                unsafe_allow_html=True,
             )
+
+            # ── Contributing metrics (custom HTML for precise ? alignment) ──
+            rows = []
             for key, num_key, display_key in [
-                ("lcp",          "lcp_ms",  "lcp"),
-                ("fcp",          "fcp_ms",  "fcp"),
-                ("cls",          "cls_raw", "cls"),
-                ("tbt",          "tbt_ms",  "tbt"),
-                ("inp",          "inp_ms",  "inp"),
-                ("ttfb",         "ttfb_ms", "ttfb"),
-                ("speed_index",  "speed_ms","speed_index"),
+                ("lcp",         "lcp_ms",  "lcp"),
+                ("fcp",         "fcp_ms",  "fcp"),
+                ("cls",         "cls_raw", "cls"),
+                ("tbt",         "tbt_ms",  "tbt"),
+                ("inp",         "inp_ms",  "inp"),
+                ("ttfb",        "ttfb_ms", "ttfb"),
+                ("speed_index", "speed_ms","speed_index"),
             ]:
                 label_name, help_text = METRIC_HELP[key]
-                icon = cwv_colour(key, m.get(num_key))
-                st.metric(
-                    label=f"{icon} {label_name}",
-                    value=m.get(display_key, "N/A"),
-                    help=f"**{label_name}** — {help_text}",
+                metric_icon = cwv_colour(key, m.get(num_key))
+                val = m.get(display_key, "N/A")
+                safe_tip = help_text.replace("<", "&lt;").replace(">", "&gt;")
+                rows.append(
+                    f'<div style="display:flex;align-items:center;justify-content:space-between;'
+                    f'padding:0.5rem 0;border-bottom:1px solid rgba(0,0,0,0.06);">'
+                    f'<div style="display:flex;align-items:center;gap:0.35rem;'
+                    f'font-size:0.8rem;color:#444;">'
+                    f'<span>{metric_icon}</span>'
+                    f'<span>{label_name}</span>'
+                    f'<span class="cro-tip">'
+                    f'<span style="cursor:help;font-size:0.6rem;color:#bbb;border:1px solid #ddd;'
+                    f'border-radius:50%;width:13px;height:13px;display:inline-flex;'
+                    f'align-items:center;justify-content:center;flex-shrink:0;'
+                    f'font-weight:700;line-height:1;">?</span>'
+                    f'<span class="cro-tip-box">{safe_tip}</span>'
+                    f'</span>'
+                    f'</div>'
+                    f'<div style="font-size:0.9rem;font-weight:700;color:#111;">{val}</div>'
+                    f'</div>'
                 )
+            st.markdown(
+                '<p style="font-size:0.68rem;font-weight:700;text-transform:uppercase;'
+                'letter-spacing:0.06em;color:#999;margin:0 0 0.15rem;">'
+                'Contributing metrics</p>'
+                f'<div>{"".join(rows)}</div>',
+                unsafe_allow_html=True,
+            )
 
     if errors:
         st.caption(f"Note: {', '.join(errors.keys())} data unavailable ({', '.join(errors.values())})")
@@ -885,10 +1110,22 @@ def _audit_filename(url: str, suffix: str) -> str:
     return f"cro-audit-{suffix}-{slug}.md"
 
 
+def _polish_report(text: str) -> str:
+    """Normalise spacing in AI-generated markdown so every section breathes."""
+    # Ensure a blank line after every heading if one isn't already there
+    text = re.sub(r"(^#{1,4} [^\n]+)\n(?!\n)", r"\1\n\n", text, flags=re.MULTILINE)
+    # Ensure a blank line before every heading (except at the very start)
+    text = re.sub(r"([^\n])\n(#{1,4} )", r"\1\n\n\2", text)
+    # Collapse 3+ consecutive blank lines to exactly 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 # ----------------------------
 # UI
 # ----------------------------
 st.set_page_config(page_title="AI CRO Audit Tool", page_icon="📈")
+st.markdown(_REPORT_CSS, unsafe_allow_html=True)
 st.title("📈 AI CRO Audit Tool")
 
 site_type = st.radio(
@@ -903,15 +1140,16 @@ site_type = st.radio(
     ),
 )
 
-tab1, tab2 = st.tabs(["URL Audit", "Vision (Auto)"])
+tab2, tab1 = st.tabs(["Vision Audit", "Text Audit"])
 
 
 with tab1:
     url = st.text_input("Website URL", key="url_audit")
 
     if st.button("Run Audit", key="run_audit", type="primary"):
+        url = normalise_url(url)
         if not url or not is_valid_url(url):
-            st.error("Please enter a valid URL starting with https://")
+            st.error("Please enter a valid URL (e.g. example.com)")
             st.stop()
 
         with st.spinner("Extracting pages + fetching PageSpeed data..."):
@@ -948,7 +1186,7 @@ with tab1:
                 render_pagespeed(st.session_state["text_ps_raw"])
 
         st.subheader("Results")
-        st.write(st.session_state["text_result"])
+        st.markdown(_polish_report(st.session_state["text_result"]))
 
         st.download_button(
             label="Download audit (.md)",
@@ -963,8 +1201,9 @@ with tab2:
     include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
 
     if st.button("Run Vision Audit", key="run_vision", type="primary"):
+        vurl = normalise_url(vurl)
         if not vurl or not is_valid_url(vurl):
-            st.error("Please enter a valid URL starting with https://")
+            st.error("Please enter a valid URL (e.g. example.com)")
             st.stop()
 
         with st.spinner("Capturing screenshots (desktop + mobile)..."):
@@ -1006,7 +1245,7 @@ with tab2:
                 if scraped_pages:
                     st.info(f"Text scraped from {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
 
-        with st.spinner("Running vision audit (gpt-4.1)..."):
+        with st.spinner(f"Running vision audit ({MODEL_VISION})..."):
             result = run_ai_vision(text_context, shots, pagespeed=ps_context, site_type=site_type)
 
         st.session_state["vision_result"] = result
@@ -1031,7 +1270,7 @@ with tab2:
             render_shots_gallery(st.session_state["vision_shots"])
 
         st.subheader("Results")
-        st.write(st.session_state["vision_result"])
+        st.markdown(_polish_report(st.session_state["vision_result"]))
 
         st.download_button(
             label="Download audit (.md)",
