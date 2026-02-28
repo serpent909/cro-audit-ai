@@ -19,8 +19,8 @@ QUALITY = 75                   # JPEG quality ~70–80
 VIEWPORT = {"width": 1200, "height": 900}
 
 # --- Navigation robustness ---
-NAV_TIMEOUT_MS = 25000
-POST_GOTO_PAUSE_MS = 900
+NAV_TIMEOUT_MS = 15000
+POST_GOTO_PAUSE_MS = 500
 
 PRICING_HINTS = [
     "pricing", "plans", "plan", "subscriptions", "subscription", "billing",
@@ -189,6 +189,37 @@ def _try_dismiss_common_popups(page):
             continue
 
 
+def _trigger_lazy_load(page):
+    """
+    Scroll through the full page in steps so intersection-observer-based
+    lazy loaders fire for every image, then scroll back to top.
+    """
+    try:
+        total_height = page.evaluate("document.body.scrollHeight")
+        step = 600  # px per scroll step — roughly half a viewport
+        y = 0
+        while y < total_height:
+            page.evaluate(f"window.scrollTo(0, {y})")
+            page.wait_for_timeout(80)
+            y += step
+        # Pause at bottom so final images can start loading
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(200)
+        # Wait for all <img> elements to finish loading (5 s cap)
+        try:
+            page.wait_for_function(
+                "() => [...document.images].every(img => img.complete)",
+                timeout=5000,
+            )
+        except Exception:
+            pass
+        # Return to top for the full-page screenshot
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(150)
+    except Exception:
+        pass  # non-fatal — screenshot proceeds regardless
+
+
 def _goto_robust(page, url: str):
     """
     Avoid 'networkidle' hangs:
@@ -258,6 +289,7 @@ def main():
         homepage = url.rstrip("/")
         final_url, title, elapsed_ms, notes = _goto_robust(page, homepage)
         try:
+            _trigger_lazy_load(page)
             png = page.screenshot(full_page=True, type="png")
             img_url = png_bytes_to_jpeg_data_url(png)
             shots.append({
@@ -291,6 +323,7 @@ def main():
 
             try:
                 final_url, title, elapsed_ms, notes = _goto_robust(page, cand)
+                _trigger_lazy_load(page)
                 png = page.screenshot(full_page=True, type="png")
                 img_url = png_bytes_to_jpeg_data_url(png)
                 shots.append({
@@ -321,6 +354,7 @@ def main():
         mobile_page = mobile_context.new_page()
         try:
             final_url_m, title_m, elapsed_m, notes_m = _goto_robust(mobile_page, homepage)
+            _trigger_lazy_load(mobile_page)
             png_m = mobile_page.screenshot(full_page=True, type="png")
             shots.append({
                 "url": homepage,
