@@ -3,6 +3,7 @@ import json
 import os
 import re
 import statistics
+import statistics
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -711,11 +712,14 @@ def fetch_pagespeed(url: str) -> tuple[str, dict]:
     Fetch PageSpeed Insights for mobile + desktop in parallel.
     Runs PSI_RUNS times per strategy concurrently and takes the median of each
     numeric metric to reduce Lighthouse variability.
+    Runs PSI_RUNS times per strategy concurrently and takes the median of each
+    numeric metric to reduce Lighthouse variability.
     Returns (ai_context_str, {mobile: metrics, desktop: metrics}).
     On total failure returns ("", {}).
     """
     api_key = os.getenv("PAGESPEED_API_KEY", "")
 
+    def _fetch(strategy: str, _: int) -> tuple[str, dict | None]:
     def _fetch(strategy: str, _: int) -> tuple[str, dict | None]:
         params = {"url": url, "strategy": strategy, "category": "performance"}
         if api_key:
@@ -782,9 +786,17 @@ def fetch_pagespeed(url: str) -> tuple[str, dict]:
             for s in ("mobile", "desktop")
             for i in range(PSI_RUNS)
         ]
+
+    with ThreadPoolExecutor(max_workers=PSI_RUNS * 2) as executor:
+        futures = [
+            executor.submit(_fetch, s, i)
+            for s in ("mobile", "desktop")
+            for i in range(PSI_RUNS)
+        ]
         for future in as_completed(futures):
             strategy, metrics = future.result()
             if metrics and "_http_error" not in metrics:
+                runs_by_strategy[strategy].append(metrics)
                 runs_by_strategy[strategy].append(metrics)
             else:
                 err = (metrics or {}).get("_http_error", "no data returned")
@@ -804,13 +816,19 @@ def fetch_pagespeed(url: str) -> tuple[str, dict]:
         f"PAGE SPEED (Google PageSpeed Insights — median of {PSI_RUNS} runs — "
         "include in scorecard and mobile section)"
     ]
+    lines = [
+        f"PAGE SPEED (Google PageSpeed Insights — median of {PSI_RUNS} runs — "
+        "include in scorecard and mobile section)"
+    ]
     for strategy in ("mobile", "desktop"):
         m = raw.get(strategy)
         if not m:
             lines.append(f"\n{strategy.capitalize()}: data unavailable")
             continue
         n = m.get("_run_count", PSI_RUNS)
+        n = m.get("_run_count", PSI_RUNS)
         score = m["score"] if m["score"] is not None else "N/A"
+        lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100 (median of {n} runs)")
         lines.append(f"\n{strategy.capitalize()} — Performance score: {score}/100 (median of {n} runs)")
         lines.append(f"  LCP:         {m['lcp']}  (Good <2.5s, Poor >4s)")
         lines.append(f"  FCP:         {m['fcp']}  (Good <1.8s, Poor >3s)")
