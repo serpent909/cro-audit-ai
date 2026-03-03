@@ -1140,145 +1140,85 @@ site_type = st.radio(
     ),
 )
 
-tab2, tab1 = st.tabs(["Vision Audit", "Text Audit"])
+vurl = st.text_input("Website URL for screenshots", key="vision_url")
+include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
 
+if st.button("Run Vision Audit", key="run_vision", type="primary"):
+    vurl = normalise_url(vurl)
+    if not vurl or not is_valid_url(vurl):
+        st.error("Please enter a valid URL (e.g. example.com)")
+        st.stop()
 
-with tab1:
-    url = st.text_input("Website URL", key="url_audit")
-
-    if st.button("Run Audit", key="run_audit", type="primary"):
-        url = normalise_url(url)
-        if not url or not is_valid_url(url):
-            st.error("Please enter a valid URL (e.g. example.com)")
+    with st.spinner("Capturing screenshots (desktop + mobile)..."):
+        try:
+            shots, debug, raw = take_auto_screenshots(vurl)
+        except Exception as e:
+            st.error(f"Screenshot failed: {e}")
             st.stop()
 
-        with st.spinner("Extracting pages + fetching PageSpeed data..."):
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                f_text = executor.submit(extract_text_from_url, url)
-                f_psi  = executor.submit(fetch_pagespeed, url)
-            content, scraped_pages = f_text.result()
-            ps_context, ps_raw = f_psi.result()
+    with st.expander("Debug (capture.py)"):
+        st.json(debug)
+        if isinstance(raw, dict) and (raw.get("discovered_urls") or raw.get("errors")):
+            st.write("**Discovered URLs:**")
+            st.write(raw.get("discovered_urls", []))
+            if raw.get("errors"):
+                st.write("**Capture errors:**")
+                st.write(raw.get("errors", []))
 
-        if scraped_pages:
-            st.info(f"Scraped {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
-        else:
-            st.warning("No pages could be scraped. Check the URL and try again.")
-            st.stop()
+    if not shots:
+        st.error("No screenshots captured. The site may block headless browsing.")
+        st.stop()
 
-        with st.spinner("Analyzing with AI..."):
-            result = run_ai_text(content, pagespeed=ps_context, site_type=site_type)
+    text_context = ""
+    scraped_pages = []
+    ps_context = ""
+    ps_raw: dict = {}
 
-        st.session_state["text_result"] = result
-        st.session_state["text_url"] = url
-        st.session_state["text_scraped_pages"] = scraped_pages
-        st.session_state["text_ps_raw"] = ps_raw
-        st.session_state["text_site_type"] = site_type
-
-    if "text_result" in st.session_state:
-        if "text_site_type" in st.session_state:
-            st.caption(f"Audit type: {st.session_state['text_site_type']}")
-        if "text_scraped_pages" in st.session_state:
-            pages = st.session_state["text_scraped_pages"]
-            st.info(f"Scraped {len(pages)} page(s): {', '.join(pages)}")
-
-        if "text_ps_raw" in st.session_state:
-            with st.expander("PageSpeed Insights", expanded=True):
-                render_pagespeed(st.session_state["text_ps_raw"])
-
-        st.subheader("Results")
-        st.markdown(_polish_report(st.session_state["text_result"]))
-
-        st.download_button(
-            label="Download audit (.md)",
-            data=st.session_state["text_result"],
-            file_name=_audit_filename(st.session_state["text_url"], "text"),
-            mime="text/markdown",
-        )
-
-
-with tab2:
-    vurl = st.text_input("Website URL for screenshots", key="vision_url")
-    include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
-
-    if st.button("Run Vision Audit", key="run_vision", type="primary"):
-        vurl = normalise_url(vurl)
-        if not vurl or not is_valid_url(vurl):
-            st.error("Please enter a valid URL (e.g. example.com)")
-            st.stop()
-
-        with st.spinner("Capturing screenshots (desktop + mobile)..."):
-            try:
-                shots, debug, raw = take_auto_screenshots(vurl)
-            except Exception as e:
-                st.error(f"Screenshot failed: {e}")
-                st.stop()
-
-        with st.expander("Debug (capture.py)"):
-            st.json(debug)
-            if isinstance(raw, dict) and (raw.get("discovered_urls") or raw.get("errors")):
-                st.write("**Discovered URLs:**")
-                st.write(raw.get("discovered_urls", []))
-                if raw.get("errors"):
-                    st.write("**Capture errors:**")
-                    st.write(raw.get("errors", []))
-
-        if not shots:
-            st.error("No screenshots captured. The site may block headless browsing.")
-            st.stop()
-
-        text_context = ""
-        scraped_pages = []
-        ps_context = ""
-        ps_raw: dict = {}
-
-        with st.spinner("Extracting text + fetching PageSpeed data..."):
-            tasks: list = []
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                f_psi = executor.submit(fetch_pagespeed, vurl)
-                if include_text:
-                    f_text = executor.submit(extract_text_from_url, vurl)
-                    tasks.append(f_text)
-                tasks.append(f_psi)
-            ps_context, ps_raw = f_psi.result()
+    with st.spinner("Extracting text + fetching PageSpeed data..."):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_psi = executor.submit(fetch_pagespeed, vurl)
             if include_text:
-                text_context, scraped_pages = f_text.result()
-                if scraped_pages:
-                    st.info(f"Text scraped from {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
+                f_text = executor.submit(extract_text_from_url, vurl)
+        ps_context, ps_raw = f_psi.result()
+        if include_text:
+            text_context, scraped_pages = f_text.result()
+            if scraped_pages:
+                st.info(f"Text scraped from {len(scraped_pages)} page(s): {', '.join(scraped_pages)}")
 
-        with st.spinner(f"Running vision audit ({MODEL_VISION})..."):
-            result = run_ai_vision(text_context, shots, pagespeed=ps_context, site_type=site_type)
+    with st.spinner(f"Running vision audit ({MODEL_VISION})..."):
+        result = run_ai_vision(text_context, shots, pagespeed=ps_context, site_type=site_type)
 
-        st.session_state["vision_result"] = result
-        st.session_state["vision_result_url"] = vurl
-        st.session_state["vision_shots"] = shots
-        st.session_state["vision_scraped_pages"] = scraped_pages
-        st.session_state["vision_ps_raw"] = ps_raw
-        st.session_state["vision_site_type"] = site_type
+    st.session_state["vision_result"] = result
+    st.session_state["vision_result_url"] = vurl
+    st.session_state["vision_shots"] = shots
+    st.session_state["vision_scraped_pages"] = scraped_pages
+    st.session_state["vision_ps_raw"] = ps_raw
+    st.session_state["vision_site_type"] = site_type
 
-    if "vision_result" in st.session_state:
-        if "vision_site_type" in st.session_state:
-            st.caption(f"Audit type: {st.session_state['vision_site_type']}")
-        if "vision_scraped_pages" in st.session_state and st.session_state["vision_scraped_pages"]:
-            pages = st.session_state["vision_scraped_pages"]
-            st.info(f"Text scraped from {len(pages)} page(s): {', '.join(pages)}")
+if "vision_result" in st.session_state:
+    if "vision_site_type" in st.session_state:
+        st.caption(f"Audit type: {st.session_state['vision_site_type']}")
+    if "vision_scraped_pages" in st.session_state and st.session_state["vision_scraped_pages"]:
+        pages = st.session_state["vision_scraped_pages"]
+        st.info(f"Text scraped from {len(pages)} page(s): {', '.join(pages)}")
 
-        if "vision_ps_raw" in st.session_state:
-            with st.expander("PageSpeed Insights", expanded=True):
-                render_pagespeed(st.session_state["vision_ps_raw"])
+    if "vision_ps_raw" in st.session_state:
+        with st.expander("PageSpeed Insights", expanded=True):
+            render_pagespeed(st.session_state["vision_ps_raw"])
 
-        if "vision_shots" in st.session_state:
-            render_shots_gallery(st.session_state["vision_shots"])
+    if "vision_shots" in st.session_state:
+        render_shots_gallery(st.session_state["vision_shots"])
 
-        st.subheader("Results")
-        st.markdown(_polish_report(st.session_state["vision_result"]))
+    st.subheader("Results")
+    st.markdown(_polish_report(st.session_state["vision_result"]))
 
-        st.download_button(
-            label="Download audit (.md)",
-            data=st.session_state["vision_result"],
-            file_name=_audit_filename(st.session_state["vision_result_url"], "vision"),
-            mime="text/markdown",
-        )
+    st.download_button(
+        label="Download audit (.md)",
+        data=st.session_state["vision_result"],
+        file_name=_audit_filename(st.session_state["vision_result_url"], "vision"),
+        mime="text/markdown",
+    )
 
-        with st.expander("Visited pages (final URLs)"):
-            shots_display = st.session_state.get("vision_shots", [])
-            st.write([s.get("final_url") or s.get("url") for s in shots_display])
+    with st.expander("Visited pages (final URLs)"):
+        shots_display = st.session_state.get("vision_shots", [])
+        st.write([s.get("final_url") or s.get("url") for s in shots_display])
