@@ -169,32 +169,7 @@ CWV_THRESHOLDS = {
 SCRAPE_PATHS = [
     "",
     "/pricing",
-    "/plans",
-    "/compare",
-    "/features",
-    "/product",
-    "/about",
-    "/signup",
-    "/register",
-]
 
-# Keywords used to score homepage links during URL discovery
-DISCOVERY_HINTS = [
-    # Pricing / subscription signals
-    "pricing", "plans", "plan", "subscription", "subscriptions", "billing",
-    "upgrade", "tiers", "compare",
-    # E-commerce / purchase signals
-    "shop", "store", "product", "products", "collection", "collections",
-    "buy", "purchase", "order", "packages", "package", "bundle", "bundles",
-    "offer", "offers",
-]
-DISCOVERY_DEBOOST = [
-    "blog", "docs", "help", "support", "changelog", "status",
-    "careers", "jobs", "news", "press", "privacy", "terms", "faq", "cookie",
-]
-MAX_DISCOVERED = 8  # max additional pages from link discovery
-
-_PROMPT_RULES = """
 You are a senior CRO (Conversion Rate Optimization) consultant. Produce an audit that is specific, evidence-based, and action-oriented.
 
 NON-NEGOTIABLE RULES
