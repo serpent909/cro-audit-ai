@@ -155,6 +155,535 @@ button p {
 }
 </style>"""
 
+# ----------------------------
+# PDF report styles
+# ----------------------------
+_PDF_CSS = """
+/* ── Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ── Page geometry ──────────────────────────────────────── */
+/* Full-bleed for all pages; @page margin-box footer is injected dynamically */
+@page { size: A4; margin: 0; }
+
+:root {
+    --navy:    #0f172a;
+    --navy2:   #1e3a5f;
+    --accent:  #6366f1;
+    --accent2: #8b5cf6;
+    --green:   #059669;
+    --amber:   #d97706;
+    --red:     #dc2626;
+    --text:    #1e293b;
+    --muted:   #64748b;
+    --border:  #e2e8f0;
+    --bg:      #f8fafc;
+    --white:   #ffffff;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, Helvetica, sans-serif;
+    color: var(--text);
+    font-size: 10.5pt;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+/* ── COVER PAGE ─────────────────────────────────────────── */
+.cover {
+    width: 210mm;
+    min-height: 297mm;
+    background: var(--navy);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+}
+
+/* subtle radial glows for depth */
+.cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 70% 55% at 85% 15%, rgba(99,102,241,0.35) 0%, transparent 60%),
+        radial-gradient(ellipse 55% 45% at 10% 85%, rgba(139,92,246,0.2) 0%, transparent 60%);
+    pointer-events: none;
+}
+
+.cover-accent-bar {
+    height: 5px;
+    background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.cover-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 52px 64px 44px;
+    position: relative;
+    z-index: 1;
+}
+
+.cover-eyebrow {
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0;
+}
+
+.cover-spacer { flex: 1; min-height: 28px; }
+
+.cover-title {
+    font-size: 48pt;
+    font-weight: 800;
+    line-height: 1.0;
+    letter-spacing: -0.03em;
+    color: white;
+    margin: 20px 0 8px;
+}
+
+.cover-subtitle {
+    font-size: 16pt;
+    font-weight: 300;
+    color: #94a3b8;
+    letter-spacing: 0.03em;
+    margin-bottom: 44px;
+}
+
+.cover-url-card {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 12px;
+    padding: 18px 24px;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 440px;
+    margin-bottom: 20px;
+}
+
+.cover-url-label {
+    font-size: 7pt;
+    color: #475569;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.cover-url-value {
+    font-size: 13pt;
+    font-weight: 600;
+    color: #e2e8f0;
+    word-break: break-all;
+    line-height: 1.3;
+}
+
+.cover-meta-row {
+    display: flex;
+    gap: 32px;
+}
+
+.cover-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cover-meta-label {
+    font-size: 7pt;
+    color: #475569;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.cover-meta-value {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #cbd5e1;
+}
+
+.cover-score-badge {
+    width: 116px;
+    height: 116px;
+    border-radius: 50%;
+    border: 3px solid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.25);
+    flex-shrink: 0;
+}
+
+.cover-score-number {
+    font-size: 27pt;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.cover-score-denom {
+    font-size: 9pt;
+    font-weight: 400;
+    color: #94a3b8;
+    line-height: 1;
+}
+
+.cover-score-label {
+    font-size: 6pt;
+    color: #94a3b8;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+.cover-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 64px 22px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    color: #475569;
+    font-size: 8pt;
+    position: relative;
+    z-index: 1;
+}
+
+.cover-footer-brand {
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    font-size: 9pt;
+}
+
+/* ── MAIN CONTENT ───────────────────────────────────────── */
+/* @page handles top/side/bottom margins; no padding needed here */
+.main-content {
+    padding: 0;
+}
+
+/* ── TABLE OF CONTENTS PAGE ─────────────────────────────── */
+.toc-page {
+    page-break-after: always;
+    padding: 4mm 0 18mm;
+    /* No min-height — page-break-after:always handles it; min-height was causing overflow */
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+    background: white;
+}
+
+.toc-eyebrow {
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+
+.toc-heading {
+    font-size: 30pt;
+    font-weight: 800;
+    color: var(--navy);
+    letter-spacing: -0.03em;
+    margin: 0 0 36px;
+    padding: 0;
+    border: none;              /* override global h2 border */
+    page-break-before: avoid; /* override section-start */
+}
+
+.toc-accent {
+    width: 48px;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    margin-bottom: 32px;
+}
+
+.toc-entries { flex: 1; }
+
+.toc-entry {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--border);
+    break-inside: avoid;
+}
+
+.toc-entry:last-child { border-bottom: none; }
+
+.toc-num {
+    font-size: 8.5pt;
+    font-weight: 800;
+    color: var(--accent);
+    width: 24px;
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.toc-name {
+    font-size: 11pt;
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+    line-height: 1.3;
+}
+
+.toc-cat {
+    font-size: 7.5pt;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+}
+
+/* ── TYPOGRAPHY ─────────────────────────────────────────── */
+/* h2 = primary accent colour (indigo) — highest visual level */
+/* h3 = deep navy — secondary level                          */
+/* h4 = slate — tertiary level                               */
+
+.main-content h2 {
+    font-size: 15pt;
+    font-weight: 800;
+    color: var(--accent);          /* indigo — primary section colour */
+    margin: 0 0 8px;
+    padding-bottom: 9px;
+    border-bottom: 3px solid var(--accent);
+    letter-spacing: -0.02em;
+    page-break-before: always;
+    break-before: always;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+/* ── EXECUTIVE SUMMARY CARD ─────────────────────────────── */
+.exec-summary-card {
+    background: linear-gradient(135deg, #f8faff 0%, #eef2ff 100%);
+    border: 1px solid #c7d2fe;
+    border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 18px 22px 14px;
+    margin: 8px 0 0;
+}
+.exec-summary-card ul  { margin-bottom: 4px; }
+.exec-summary-card li  { margin-bottom: 7px; line-height: 1.65; }
+.exec-summary-card p   { margin-bottom: 7px; }
+
+/* First h2 in the page — no forced break (already new page after TOC) */
+.main-content h2:first-of-type {
+    page-break-before: auto;
+    break-before: auto;
+}
+
+h3 {
+    font-size: 12pt;
+    font-weight: 700;
+    color: var(--navy);            /* navy — secondary heading */
+    margin: 22px 0 6px;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+/* ── Orphan prevention: keep headings with their list content ── */
+/* break-before:avoid  → list must start on the same page as its h3    */
+/* break-inside:avoid  → list must not split internally between li rows */
+/* Together: the browser's only valid break point is BEFORE the h3,    */
+/* so the whole heading + list is pushed to the next page as a unit.   */
+h3 + ul, h3 + ol {
+    page-break-before: avoid;
+    break-before: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+h3 + p, h3 + h4 {
+    page-break-before: avoid;
+    break-before: avoid;
+}
+
+h4 {
+    font-size: 10.5pt;
+    font-weight: 600;
+    color: #334155;                /* slate — tertiary heading */
+    margin: 16px 0 5px;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+h4 + ul, h4 + ol, h4 + p,
+h4 + * + ul, h4 + * + ol, h4 + * + p {
+    page-break-before: avoid;
+    break-before: avoid;
+}
+
+p    { margin: 0 0 9px; orphans: 3; widows: 3; }
+
+/* Proper bullet hierarchy */
+ul            { list-style-type: disc;    margin: 0 0 11px 1.6rem; padding: 0; }
+ul ul         { list-style-type: circle;  margin: 4px 0 6px 1.6rem; }
+ul ul ul      { list-style-type: square; }
+ol            { list-style-type: decimal; margin: 0 0 11px 1.6rem; padding: 0; }
+ol li         { margin-bottom: 7px; }
+ol li > ul    { margin-top: 5px; }
+ol li > p     { margin: 0 0 4px; }
+li            { margin-bottom: 5px; break-inside: avoid; }
+
+strong { font-weight: 700; color: var(--navy); }
+em   { font-style: italic; }
+hr   { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+
+/* ── COMMENTARY BOXES ────────────────────────────────────── */
+.commentary-block {
+    background: #f0f4ff;
+    border-left: 4px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 16px 0 20px;
+    break-inside: avoid;
+}
+
+.commentary-block p { margin: 0 0 6px; font-size: 9.5pt; color: #374151; }
+.commentary-block p:last-child { margin: 0; }
+.commentary-block strong { color: var(--accent); }
+
+/* ── TABLES ─────────────────────────────────────────────── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 9.5pt;
+    break-inside: avoid;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(0,0,0,0.05);
+}
+
+thead tr { background: var(--navy); }
+
+thead th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 8.5pt;
+    color: white;
+    letter-spacing: 0.04em;
+}
+
+tbody tr:nth-child(even) { background: var(--bg); }
+tbody tr:nth-child(odd)  { background: white; }
+
+tbody td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+/* ── IMPACT / EFFORT / CONFIDENCE BADGES ────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.badge-impact-high { background: #fee2e2; color: #dc2626; }
+.badge-impact-med  { background: #fef3c7; color: #d97706; }
+.badge-impact-low  { background: #dcfce7; color: #059669; }
+.badge-effort-s    { background: #dcfce7; color: #059669; }
+.badge-effort-m    { background: #fef3c7; color: #d97706; }
+.badge-effort-l    { background: #fee2e2; color: #dc2626; }
+.badge-conf-high   { background: #ede9fe; color: #7c3aed; }
+.badge-conf-med    { background: #fef3c7; color: #d97706; }
+.badge-conf-low    { background: #f1f5f9; color: #64748b; }
+
+/* ── PAGESPEED SECTION ──────────────────────────────────── */
+.psi-section-label {
+    font-size: 7.5pt;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: -4px 0 14px;
+}
+
+.psi-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin: 0 0 26px;
+}
+
+.psi-card {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    break-inside: avoid;
+}
+
+.psi-card-header {
+    padding: 18px 22px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.psi-strategy { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+.psi-score-row { display: flex; align-items: baseline; gap: 3px; }
+.psi-score-big { font-size: 34pt; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.psi-score-denom { font-size: 11pt; font-weight: 400; color: inherit; opacity: 0.6; }
+
+.psi-status-pill {
+    font-size: 7.5pt;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: white;
+    align-self: flex-start;
+}
+
+.psi-metrics { padding: 4px 22px 16px; background: white; }
+
+.psi-metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 8.5pt;
+}
+
+.psi-metric-row:last-child { border-bottom: none; }
+.psi-metric-name { color: var(--muted); }
+.psi-metric-val  { font-weight: 700; }
+.psi-metric-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+"""
+
 # Core Web Vitals thresholds for colour-coding in the UI
 CWV_THRESHOLDS = {
     "lcp":          {"good": 2500,  "poor": 4000,  "unit": "ms", "label": "LCP"},
@@ -165,18 +694,6 @@ CWV_THRESHOLDS = {
     "ttfb":         {"good": 800,   "poor": 1800,  "unit": "ms", "label": "TTFB"},
     "speed_index":  {"good": 3400,  "poor": 5800,  "unit": "ms", "label": "Speed Index"},
 }
-
-SCRAPE_PATHS = [
-    "",
-    "/pricing",
-    "/plans",
-    "/compare",
-    "/features",
-    "/product",
-    "/about",
-    "/signup",
-    "/register",
-]
 
 # Keywords used to score homepage links during URL discovery
 DISCOVERY_HINTS = [
@@ -192,7 +709,9 @@ DISCOVERY_DEBOOST = [
     "blog", "docs", "help", "support", "changelog", "status",
     "careers", "jobs", "news", "press", "privacy", "terms", "faq", "cookie",
 ]
-MAX_DISCOVERED = 8  # max additional pages from link discovery
+MAX_DISCOVERED = 8   # max candidates returned per discovery pass
+MAX_L2_SOURCES = 2   # top L1 pages to also crawl for L2 links
+MAX_PAGES = 12       # total cap on discovered pages sent to the AI (excl. homepage)
 
 _PROMPT_RULES = """
 You are a senior CRO (Conversion Rate Optimization) consultant. Produce an audit that is specific, evidence-based, and action-oriented.
@@ -598,15 +1117,33 @@ def extract_text_from_url(url: str) -> tuple[str, list[str]]:
     except Exception:
         pass
 
-    # Phase 2: Discover pricing/shop/product URLs from homepage navigation links
-    discovered: list[str] = []
+    # Phase 2: L1 discovery — links found directly on the homepage
+    l1_urls: list[str] = []
     if homepage_html:
-        discovered = discover_urls_from_homepage(homepage_html, base)
+        l1_urls = discover_urls_from_homepage(homepage_html, base)
 
-    # Phase 3: Build deduped URL list
-    # Hardcoded paths (excluding "" since homepage already fetched), then discovered
-    other_hardcoded = [base + p for p in SCRAPE_PATHS if p != ""]
-    all_other = list(dict.fromkeys(other_hardcoded + discovered))
+    # Phase 2b: L2 discovery — fetch top L1 pages and collect their links too.
+    # This catches sub-pages that are only linked from e.g. /pricing, not the homepage.
+    def _fetch_l2(l1_url: str) -> list[str]:
+        try:
+            r = requests.get(l1_url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                return discover_urls_from_homepage(r.text, base)
+        except Exception:
+            pass
+        return []
+
+    l2_urls: list[str] = []
+    l2_sources = l1_urls[:MAX_L2_SOURCES]
+    if l2_sources:
+        with ThreadPoolExecutor(max_workers=len(l2_sources)) as ex:
+            for extra in ex.map(_fetch_l2, l2_sources):
+                l2_urls.extend(extra)
+
+    # Phase 3: Merge L1 + L2, deduplicate (L1 takes priority), cap total.
+    # Only URLs that actually exist on the site are included — no hardcoded guesses.
+    all_discovered = list(dict.fromkeys(l1_urls + l2_urls))
+    all_other = [u for u in all_discovered if u != base][:MAX_PAGES]
 
     def fetch(page_url: str) -> tuple[str, str | None]:
         return page_url, extract_from_single_page(page_url, headers)
@@ -627,7 +1164,7 @@ def extract_text_from_url(url: str) -> tuple[str, list[str]]:
             if content:
                 results[page_url] = content
 
-    # Assemble in stable order: homepage → hardcoded paths → discovered
+    # Assemble in stable order: homepage → L1 → L2
     ordered = [base] + all_other
     bundles = []
     scraped_pages = []
@@ -1110,6 +1647,453 @@ def _audit_filename(url: str, suffix: str) -> str:
     return f"cro-audit-{suffix}-{slug}.md"
 
 
+def _pdf_filename(url: str) -> str:
+    slug = re.sub(r"https?://", "", url).rstrip("/").replace("/", "-").replace(".", "-")
+    return f"cro-audit-{slug}.pdf"
+
+
+# ── PDF helpers ──────────────────────────────────────────────────────────────
+
+def _extract_overall_score(report_md: str) -> str | None:
+    """Pull the X.X / 10 overall score from the AI markdown, if present."""
+    m = re.search(r"\*\*(\d+\.?\d*)\s*/\s*10\*\*", report_md)
+    return m.group(1) if m else None
+
+
+def _score_band(score_int) -> tuple[str, str, str]:
+    """(bg_color, text_color, label) for a 0-100 Lighthouse performance score."""
+    if score_int is None:
+        return "#f1f5f9", "#64748b", "N/A"
+    if score_int >= 90:
+        return "#d1fae5", "#059669", "Good"
+    if score_int >= 50:
+        return "#fef3c7", "#d97706", "Needs Work"
+    return "#fee2e2", "#dc2626", "Poor"
+
+
+def _cwv_dot_color(key: str, raw_val) -> str:
+    """CSS color for a metric dot indicator."""
+    if raw_val is None:
+        return "#cbd5e1"
+    t = CWV_THRESHOLDS.get(key, {})
+    if not t:
+        return "#cbd5e1"
+    if raw_val <= t["good"]:
+        return "#059669"
+    if raw_val <= t["poor"]:
+        return "#d97706"
+    return "#dc2626"
+
+
+_PSI_COMMENTARY = """
+<div class="commentary-block">
+<p><strong>What these metrics measure</strong> &mdash; Google Lighthouse scores every page
+across five dimensions: <em>Performance</em> (raw speed), <em>Accessibility</em>, <em>Best Practices</em>,
+<em>SEO</em>, and <em>Progressive Web App</em>. The scores below focus on <strong>Performance</strong>
+and its Core Web Vitals &mdash; the specific signals Google uses as ranking factors and that
+directly determine whether visitors stay or leave.</p>
+<p><strong>Why it matters for conversion</strong> &mdash; Google research shows a 1-second increase
+in load time reduces conversions by up to <strong>7%</strong> and increases bounce rate by <strong>32%</strong>.
+Pages scoring below 50 typically lose a significant portion of visitors before they see any content.
+Core Web Vitals are also a confirmed Google Search ranking signal &mdash; poor scores harm organic
+traffic as well as on-site conversion.</p>
+<p><strong>LCP</strong> (how fast the main content appears) drives first impressions &mdash; above 4s
+most visitors assume the page is broken. <strong>CLS</strong> (layout shifts) causes mis-clicks on
+CTAs as buttons jump while the page loads. <strong>TBT / INP</strong> measure how responsive the page
+feels to clicks and form inputs &mdash; critical for sign-up and checkout flows. <strong>TTFB</strong>
+is the server&rsquo;s response time and is the foundation every other metric builds on.</p>
+</div>
+"""
+
+def _build_psi_html(ps_raw: dict) -> str:
+    """Render PageSpeed cards as HTML for the PDF report."""
+    strategies = [s for s in ("mobile", "desktop") if s in ps_raw]
+    if not strategies:
+        return ""
+
+    _metrics = [
+        ("lcp",         "lcp_ms",  "lcp",         "Largest Contentful Paint"),
+        ("fcp",         "fcp_ms",  "fcp",         "First Contentful Paint"),
+        ("cls",         "cls_raw", "cls",         "Cumulative Layout Shift"),
+        ("tbt",         "tbt_ms",  "tbt",         "Total Blocking Time"),
+        ("inp",         "inp_ms",  "inp",         "Interaction to Next Paint"),
+        ("ttfb",        "ttfb_ms", "ttfb",        "Time to First Byte"),
+        ("speed_index", "speed_ms","speed_index", "Speed Index"),
+    ]
+
+    cards = ""
+    for strategy in strategies:
+        m = ps_raw[strategy]
+        score = m.get("score")
+        bg, col, label = _score_band(score)
+        score_display = str(score) if score is not None else "—"
+
+        rows = ""
+        for key, num_key, disp_key, metric_label in _metrics:
+            val = m.get(disp_key, "N/A")
+            dot_col = _cwv_dot_color(key, m.get(num_key))
+            rows += (
+                f'<div class="psi-metric-row">'
+                f'<span style="display:flex;align-items:center;gap:6px;">'
+                f'<span class="psi-metric-dot" style="background:{dot_col};"></span>'
+                f'<span class="psi-metric-name">{metric_label}</span>'
+                f'</span>'
+                f'<span class="psi-metric-val" style="color:{dot_col}">{val}</span>'
+                f'</div>'
+            )
+
+        cards += (
+            f'<div class="psi-card">'
+            f'<div class="psi-card-header" style="background:{bg};">'
+            f'<div>'
+            f'<div class="psi-strategy" style="color:{col};">{strategy.capitalize()}</div>'
+            f'<div class="psi-score-row">'
+            f'<span class="psi-score-big" style="color:{col};">{score_display}</span>'
+            f'<span class="psi-score-denom" style="color:{col};">/100</span>'
+            f'</div>'
+            f'</div>'
+            f'<div class="psi-status-pill" style="background:{col};">{label}</div>'
+            f'</div>'
+            f'<div class="psi-metrics">{rows}</div>'
+            f'</div>'
+        )
+
+    return (
+        f'<h2>Performance Metrics</h2>'
+        f'<p class="psi-section-label">Google Lighthouse &mdash; median of {PSI_RUNS} runs per strategy</p>'
+        f'<div class="psi-grid">{cards}</div>'
+        f'{_PSI_COMMENTARY}'
+    )
+
+
+
+def _build_toc_html(report_md: str, has_psi: bool) -> str:
+    """Build the Table of Contents page from markdown headings."""
+    entries: list[tuple[str, str]] = []  # (display_name, category_hint)
+
+    if has_psi:
+        entries.append(("Performance Metrics", "Analytics"))
+
+    for line in report_md.splitlines():
+        if line.startswith("## "):
+            heading = line[3:].strip()
+            # Strip leading ordinal like "0) " or "1) "
+            heading = re.sub(r"^\d+\)\s*", "", heading)
+            # Strip parenthetical explanations e.g. "(write the actual copy)"
+            heading = re.sub(r"\s*\([^)]+\)\s*$", "", heading).strip()
+            # Capitalise first letter
+            heading = heading[0].upper() + heading[1:] if heading else heading
+            # Truncate very long headings
+            if len(heading) > 60:
+                heading = heading[:57] + "…"
+            # Derive a short category hint from the heading
+            lh = heading.lower()
+            if any(k in lh for k in ("business", "context")):
+                cat = "Overview"
+            elif any(k in lh for k in ("funnel", "map")):
+                cat = "Navigation"
+            elif any(k in lh for k in ("executive", "summary")):
+                cat = "Summary"
+            elif any(k in lh for k in ("scorecard", "score")):
+                cat = "Scoring"
+            elif any(k in lh for k in ("above", "fold")):
+                cat = "UX"
+            elif any(k in lh for k in ("issue", "problem")):
+                cat = "Issues"
+            elif any(k in lh for k in ["mobile"]):
+                cat = "Mobile"
+            elif any(k in lh for k in ("copy", "cta", "headline")):
+                cat = "Copywriting"
+            elif any(k in lh for k in ("experiment", "plan", "test")):
+                cat = "Action Plan"
+            else:
+                cat = ""
+            entries.append((heading, cat))
+
+    rows = ""
+    for i, (name, cat) in enumerate(entries, start=1):
+        cat_html = f'<span class="toc-cat">{cat}</span>' if cat else ""
+        rows += (
+            f'<div class="toc-entry">'
+            f'<span class="toc-num">{i:02d}</span>'
+            f'<span class="toc-name">{name}</span>'
+            f'{cat_html}'
+            f'</div>'
+        )
+
+    return (
+        f'<div class="toc-page">'
+        f'<div class="toc-eyebrow">CRO Audit Report</div>'
+        f'<h2 class="toc-heading">Contents</h2>'
+        f'<div class="toc-accent"></div>'
+        f'<div class="toc-entries">{rows}</div>'
+        f'</div>'
+    )
+
+
+def build_pdf_html(
+    report_md: str,
+    ps_raw: dict,
+    url: str,
+    site_type: str,
+) -> str:
+    """Assemble the complete styled HTML document for PDF generation."""
+    import markdown as _md
+
+    # ── Cover: score badge ───────────────────────────────────────────────────
+    raw_score = _extract_overall_score(report_md)
+    score_badge_html = ""
+    if raw_score:
+        val = float(raw_score)
+        sc  = "#34d399" if val >= 7.5 else ("#fbbf24" if val >= 5.0 else "#f87171")
+        score_badge_html = (
+            f'<div class="cover-score-badge" style="border-color:{sc};">'
+            f'<div class="cover-score-number" style="color:{sc};">{raw_score}</div>'
+            f'<div class="cover-score-denom" style="color:{sc};">/10</div>'
+            f'<div class="cover-score-label">CRO Score</div>'
+            f'</div>'
+        )
+
+    # ── Markdown → HTML ──────────────────────────────────────────────────────
+    report_html = _md.markdown(report_md, extensions=["tables"])
+
+    # ── Badge injection ───────────────────────────────────────────────────────
+    badge_subs = [
+        (r"Impact:\s*High\b",            '<span class="badge badge-impact-high">Impact: High</span>'),
+        (r"Impact:\s*Med(?:ium)?\b",      '<span class="badge badge-impact-med">Impact: Med</span>'),
+        (r"Impact:\s*Low\b",              '<span class="badge badge-impact-low">Impact: Low</span>'),
+        (r"Effort:\s*S\b",                '<span class="badge badge-effort-s">Effort: S</span>'),
+        (r"Effort:\s*M\b",                '<span class="badge badge-effort-m">Effort: M</span>'),
+        (r"Effort:\s*L\b",                '<span class="badge badge-effort-l">Effort: L</span>'),
+        (r"Confidence:\s*High\b",         '<span class="badge badge-conf-high">Confidence: High</span>'),
+        (r"Confidence:\s*Med(?:ium)?\b",  '<span class="badge badge-conf-med">Confidence: Med</span>'),
+        (r"Confidence:\s*Low\b",          '<span class="badge badge-conf-low">Confidence: Low</span>'),
+    ]
+    for pattern, repl in badge_subs:
+        report_html = re.sub(pattern, repl, report_html)
+
+    # ── Bullet/dash fix ───────────────────────────────────────────────────────
+    # Strip leading dash inside <li> (double-marker: CSS bullet + literal dash)
+    report_html = re.sub(r"(<li[^>]*>)\s*[-–]\s+", r"\1", report_html)
+    # Convert bare "- text" paragraphs → list items (re.DOTALL handles multi-line)
+    report_html = re.sub(
+        r"<p>\s*[-–]\s+(.+?)</p>",
+        r"<ul><li>\1</li></ul>",
+        report_html,
+        flags=re.DOTALL,
+    )
+    # Handle the common AI pattern: numbered item followed by "- key: value" sub-items
+    # that Python markdown renders as one <p> with <br /> line breaks, e.g.:
+    #   <p>1) <strong>Homepage</strong><br />\n   - Purpose: text<br />\n   - CTA: ...</p>
+    # Split such paragraphs so the intro becomes <p> and the dash lines become <ul><li>.
+    _br_dash = re.compile(r'<br\s*/?>\s*[-–]\s+', re.IGNORECASE)
+
+    def _split_br_dashes(m: re.Match) -> str:
+        content = m.group(1)
+        if not _br_dash.search(content):
+            return m.group(0)
+        parts = _br_dash.split(content)
+        intro = parts[0].rstrip()
+        items = [re.sub(r'<br\s*/?>\s*$', '', p, flags=re.IGNORECASE).strip()
+                 for p in parts[1:] if p.strip()]
+        li_html = "".join(f"<li>{item}</li>" for item in items)
+        return (f"<p>{intro}</p><ul>{li_html}</ul>" if intro else f"<ul>{li_html}</ul>")
+
+    report_html = re.sub(r"<p>(.*?)</p>", _split_br_dashes, report_html, flags=re.DOTALL)
+    # Collapse adjacent <ul> blocks created by the conversions above
+    report_html = re.sub(r"</ul>\s*<ul>", "\n", report_html)
+
+    # ── Strip parenthetical explanations from headings ────────────────────────
+    # e.g. "Copy & CTA improvements (write the actual copy)" → "Copy & CTA improvements"
+    report_html = re.sub(
+        r'\s*\([^)]+\)(?=\s*</h[23]>)',
+        "",
+        report_html,
+        flags=re.IGNORECASE,
+    )
+
+    # ── Executive summary card ────────────────────────────────────────────────
+    # Wrap the executive summary section content in a styled card div.
+    report_html = re.sub(
+        r'(<h2>[^<]*(?:executive[^<]*summary|summary[^<]*executive)[^<]*</h2>)(.*?)(?=<h2>|\Z)',
+        lambda m: m.group(1) + '<div class="exec-summary-card">' + m.group(2).strip() + '</div>',
+        report_html,
+        flags=re.DOTALL | re.IGNORECASE,
+        count=1,
+    )
+
+    # ── Acronym expansion (first occurrence only) ─────────────────────────────
+    _acronyms = {
+        "CRO":  "Conversion Rate Optimisation",
+        "CTA":  "Call to Action",
+        "CTAs": "Calls to Action",
+        "LCP":  "Largest Contentful Paint",
+        "CLS":  "Cumulative Layout Shift",
+        "TBT":  "Total Blocking Time",
+        "INP":  "Interaction to Next Paint",
+        "TTFB": "Time to First Byte",
+        "FCP":  "First Contentful Paint",
+        "UX":   "User Experience",
+        "SEO":  "Search Engine Optimisation",
+        "CTR":  "Click-Through Rate",
+        "MDE":  "Minimum Detectable Effect",
+        "ROI":  "Return on Investment",
+        "KPI":  "Key Performance Indicator",
+        "B2B":  "Business-to-Business",
+        "B2C":  "Business-to-Consumer",
+    }
+    for acronym, expansion in _acronyms.items():
+        # Replace only the first occurrence; skip if already written as "expansion (acronym)"
+        if f"{expansion} ({acronym})" not in report_html:
+            report_html = re.sub(
+                rf'\b{re.escape(acronym)}\b',
+                f'{acronym} ({expansion})',
+                report_html,
+                count=1,
+            )
+
+    # ── Metadata ─────────────────────────────────────────────────────────────
+    from datetime import date as _date
+    today        = _date.today().strftime("%B %d, %Y")
+    today_upper  = today.upper()
+    display_url  = re.sub(r"^https?://", "", url).rstrip("/")
+
+    # ── Component blocks ─────────────────────────────────────────────────────
+    has_psi  = bool(ps_raw and any(s in ps_raw for s in ("mobile", "desktop")))
+    psi_html = _build_psi_html(ps_raw)
+    toc_html = _build_toc_html(report_md, has_psi)
+
+    # ── Dynamic @page rule: margin-box footer (date injected at render time) ─
+    # @page :first = cover page (no footer); @page = all other pages.
+    page_css = f"""
+@page :first {{
+    size: A4;
+    margin: 0;
+}}
+@page {{
+    size: A4;
+    margin: 14mm 18mm 11mm;
+    @bottom-left {{
+        content: "CONFIDENTIAL \\2014  {today_upper}";
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        font-size: 7pt;
+        font-weight: 600;
+        color: #64748b;
+        letter-spacing: 0.08em;
+        border-top: 1px solid #e2e8f0;
+        padding: 3mm 0 0 0;
+        width: 50%;
+    }}
+    @bottom-right {{
+        content: "CRO AUDIT AI";
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        font-size: 7pt;
+        font-weight: 600;
+        color: #64748b;
+        letter-spacing: 0.08em;
+        border-top: 1px solid #e2e8f0;
+        padding: 3mm 0 0 0;
+        text-align: right;
+        width: 50%;
+    }}
+}}
+"""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+{_PDF_CSS}
+{page_css}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ COVER PAGE -->
+<div class="cover">
+  <div class="cover-accent-bar"></div>
+  <div class="cover-body">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+      <div class="cover-eyebrow">Conversion Rate Optimisation</div>
+      {score_badge_html}
+    </div>
+    <div class="cover-spacer"></div>
+    <div class="cover-title">CRO Audit<br>Report</div>
+    <div class="cover-subtitle">{today}</div>
+    <div class="cover-url-card">
+      <div class="cover-url-label">Audited Website</div>
+      <div class="cover-url-value">{display_url}</div>
+    </div>
+    <div class="cover-meta-row">
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Report Date</div>
+        <div class="cover-meta-value">{today}</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Audit Type</div>
+        <div class="cover-meta-value">{site_type}</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Classification</div>
+        <div class="cover-meta-value">Confidential</div>
+      </div>
+    </div>
+  </div>
+  <div class="cover-footer">
+    <div class="cover-footer-brand">CRO Audit AI</div>
+    <div>Prepared {today} &mdash; Confidential</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ CONTENTS PAGE -->
+{toc_html}
+
+<!-- ═══════════════════════════════════════════════════ MAIN CONTENT -->
+<div class="main-content">
+
+{psi_html}
+
+<div class="report-body">
+{report_html}
+</div>
+
+
+</div>
+
+</body>
+</html>"""
+
+
+def generate_pdf_bytes(html: str) -> bytes:
+    """Write HTML to a temp file, call pdf_worker.py via Playwright, return PDF bytes."""
+    import base64
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".html", encoding="utf-8", delete=False
+    ) as fh:
+        fh.write(html)
+        tmp_path = fh.name
+
+    try:
+        payload = json.dumps({"html_path": tmp_path})
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "pdf_worker.py")],
+            input=payload.encode(),
+            capture_output=True,
+            timeout=90,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.decode(errors="replace")[:600])
+        return base64.b64decode(result.stdout.strip())
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 def _polish_report(text: str) -> str:
     """Normalise spacing in AI-generated markdown so every section breathes."""
     # Ensure a blank line after every heading if one isn't already there
@@ -1141,7 +2125,11 @@ site_type = st.radio(
 )
 
 vurl = st.text_input("Website URL for screenshots", key="vision_url")
-include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
+col_opts_a, col_opts_b = st.columns(2)
+with col_opts_a:
+    include_text = st.checkbox("Include text context", value=True, key="vision_include_text")
+with col_opts_b:
+    gen_pdf = st.checkbox("Generate PDF report", value=True, key="vision_gen_pdf")
 
 if st.button("Run Vision Audit", key="run_vision", type="primary"):
     vurl = normalise_url(vurl)
@@ -1194,6 +2182,15 @@ if st.button("Run Vision Audit", key="run_vision", type="primary"):
     st.session_state["vision_scraped_pages"] = scraped_pages
     st.session_state["vision_ps_raw"] = ps_raw
     st.session_state["vision_site_type"] = site_type
+    st.session_state["vision_pdf_bytes"] = None  # reset
+
+    if gen_pdf:
+        with st.spinner("Generating PDF report..."):
+            try:
+                pdf_html = build_pdf_html(result, ps_raw, vurl, site_type)
+                st.session_state["vision_pdf_bytes"] = generate_pdf_bytes(pdf_html)
+            except Exception as e:
+                st.warning(f"PDF generation failed: {e}")
 
 if "vision_result" in st.session_state:
     if "vision_site_type" in st.session_state:
@@ -1212,12 +2209,61 @@ if "vision_result" in st.session_state:
     st.subheader("Results")
     st.markdown(_polish_report(st.session_state["vision_result"]))
 
-    st.download_button(
-        label="Download audit (.md)",
-        data=st.session_state["vision_result"],
-        file_name=_audit_filename(st.session_state["vision_result_url"], "vision"),
-        mime="text/markdown",
-    )
+    dl_col_a, dl_col_b = st.columns([1, 1])
+    with dl_col_a:
+        st.download_button(
+            label="⬇ Download audit (.md)",
+            data=st.session_state["vision_result"],
+            file_name=_audit_filename(st.session_state["vision_result_url"], "vision"),
+            mime="text/markdown",
+            use_container_width=True,
+        )
+    with dl_col_b:
+        pdf_bytes = st.session_state.get("vision_pdf_bytes")
+        if pdf_bytes:
+            st.download_button(
+                label="⬇ Download PDF report",
+                data=pdf_bytes,
+                file_name=_pdf_filename(st.session_state["vision_result_url"]),
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True,
+            )
+        else:
+            if st.button("Generate PDF report", key="gen_pdf_post", use_container_width=True):
+                with st.spinner("Generating PDF report..."):
+                    try:
+                        pdf_html = build_pdf_html(
+                            st.session_state["vision_result"],
+                            st.session_state.get("vision_ps_raw", {}),
+                            st.session_state["vision_result_url"],
+                            st.session_state.get("vision_site_type", "SaaS"),
+                        )
+                        st.session_state["vision_pdf_bytes"] = generate_pdf_bytes(pdf_html)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"PDF generation failed: {e}")
+
+    # ── Dev tool: save fixture for fast PDF preview without re-running audit ──
+    with st.expander("🛠 Dev: Save PDF test fixture"):
+        st.caption(
+            "Saves the current audit data to `audit_fixture.json` so you can "
+            "run `python preview_pdf.py` to preview formatting changes instantly "
+            "without re-running the audit."
+        )
+        if st.button("Save audit_fixture.json", key="save_fixture"):
+            import json as _json
+            fixture = {
+                "report_md": st.session_state["vision_result"],
+                "ps_raw":    st.session_state.get("vision_ps_raw", {}),
+                "url":       st.session_state["vision_result_url"],
+                "site_type": st.session_state.get("vision_site_type", "SaaS"),
+            }
+            fixture_path = PROJECT_ROOT / "audit_fixture.json"
+            fixture_path.write_text(
+                _json.dumps(fixture, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            st.success(f"Saved → {fixture_path}")
 
     with st.expander("Visited pages (final URLs)"):
         shots_display = st.session_state.get("vision_shots", [])
