@@ -7,3 +7,4 @@ lxml
 pillow
 playwright
 python-dotenv
+Markdown>=3.5

@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+
+/* ── Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ── Page geometry ──────────────────────────────────────── */
+/* Full-bleed for all pages; @page margin-box footer is injected dynamically */
+@page { size: A4; margin: 0; }
+
+:root {
+    --navy:    #0f172a;
+    --navy2:   #1e3a5f;
+    --accent:  #6366f1;
+    --accent2: #8b5cf6;
+    --green:   #059669;
+    --amber:   #d97706;
+    --red:     #dc2626;
+    --text:    #1e293b;
+    --muted:   #64748b;
+    --border:  #e2e8f0;
+    --bg:      #f8fafc;
+    --white:   #ffffff;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, Helvetica, sans-serif;
+    color: var(--text);
+    font-size: 10.5pt;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+/* ── COVER PAGE ─────────────────────────────────────────── */
+.cover {
+    width: 210mm;
+    min-height: 297mm;
+    background: var(--navy);
+    color: white;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+}
+
+/* subtle radial glows for depth */
+.cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 70% 55% at 85% 15%, rgba(99,102,241,0.35) 0%, transparent 60%),
+        radial-gradient(ellipse 55% 45% at 10% 85%, rgba(139,92,246,0.2) 0%, transparent 60%);
+    pointer-events: none;
+}
+
+.cover-accent-bar {
+    height: 5px;
+    background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.cover-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 52px 64px 44px;
+    position: relative;
+    z-index: 1;
+}
+
+.cover-eyebrow {
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0;
+}
+
+.cover-spacer { flex: 1; min-height: 28px; }
+
+.cover-title {
+    font-size: 48pt;
+    font-weight: 800;
+    line-height: 1.0;
+    letter-spacing: -0.03em;
+    color: white;
+    margin: 20px 0 8px;
+}
+
+.cover-subtitle {
+    font-size: 16pt;
+    font-weight: 300;
+    color: #94a3b8;
+    letter-spacing: 0.03em;
+    margin-bottom: 44px;
+}
+
+.cover-url-card {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 12px;
+    padding: 18px 24px;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 440px;
+    margin-bottom: 20px;
+}
+
+.cover-url-label {
+    font-size: 7pt;
+    color: #475569;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.cover-url-value {
+    font-size: 13pt;
+    font-weight: 600;
+    color: #e2e8f0;
+    word-break: break-all;
+    line-height: 1.3;
+}
+
+.cover-meta-row {
+    display: flex;
+    gap: 32px;
+}
+
+.cover-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cover-meta-label {
+    font-size: 7pt;
+    color: #475569;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.cover-meta-value {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #cbd5e1;
+}
+
+.cover-score-badge {
+    width: 116px;
+    height: 116px;
+    border-radius: 50%;
+    border: 3px solid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.25);
+    flex-shrink: 0;
+}
+
+.cover-score-number {
+    font-size: 27pt;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.cover-score-denom {
+    font-size: 9pt;
+    font-weight: 400;
+    color: #94a3b8;
+    line-height: 1;
+}
+
+.cover-score-label {
+    font-size: 6pt;
+    color: #94a3b8;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+.cover-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 64px 22px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    color: #475569;
+    font-size: 8pt;
+    position: relative;
+    z-index: 1;
+}
+
+.cover-footer-brand {
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    font-size: 9pt;
+}
+
+/* ── MAIN CONTENT ───────────────────────────────────────── */
+/* @page handles top/side/bottom margins; no padding needed here */
+.main-content {
+    padding: 0;
+}
+
+/* ── TABLE OF CONTENTS PAGE ─────────────────────────────── */
+.toc-page {
+    page-break-after: always;
+    padding: 4mm 0 18mm;
+    /* No min-height — page-break-after:always handles it; min-height was causing overflow */
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+    background: white;
+}
+
+.toc-eyebrow {
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+
+.toc-heading {
+    font-size: 30pt;
+    font-weight: 800;
+    color: var(--navy);
+    letter-spacing: -0.03em;
+    margin: 0 0 36px;
+    padding: 0;
+    border: none;              /* override global h2 border */
+    page-break-before: avoid; /* override section-start */
+}
+
+.toc-accent {
+    width: 48px;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    margin-bottom: 32px;
+}
+
+.toc-entries { flex: 1; }
+
+.toc-entry {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--border);
+    break-inside: avoid;
+}
+
+.toc-entry:last-child { border-bottom: none; }
+
+.toc-num {
+    font-size: 8.5pt;
+    font-weight: 800;
+    color: var(--accent);
+    width: 24px;
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.toc-name {
+    font-size: 11pt;
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+    line-height: 1.3;
+}
+
+.toc-cat {
+    font-size: 7.5pt;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+}
+
+/* ── TYPOGRAPHY ─────────────────────────────────────────── */
+/* h2 = primary accent colour (indigo) — highest visual level */
+/* h3 = deep navy — secondary level                          */
+/* h4 = slate — tertiary level                               */
+
+.main-content h2 {
+    font-size: 15pt;
+    font-weight: 800;
+    color: var(--accent);          /* indigo — primary section colour */
+    margin: 0 0 8px;
+    padding-bottom: 9px;
+    border-bottom: 3px solid var(--accent);
+    letter-spacing: -0.02em;
+    page-break-before: always;
+    break-before: always;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+/* ── EXECUTIVE SUMMARY CARD ─────────────────────────────── */
+.exec-summary-card {
+    background: linear-gradient(135deg, #f8faff 0%, #eef2ff 100%);
+    border: 1px solid #c7d2fe;
+    border-left: 4px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 18px 22px 14px;
+    margin: 8px 0 0;
+}
+.exec-summary-card ul  { margin-bottom: 4px; }
+.exec-summary-card li  { margin-bottom: 7px; line-height: 1.65; }
+.exec-summary-card p   { margin-bottom: 7px; }
+
+/* First h2 in the page — no forced break (already new page after TOC) */
+.main-content h2:first-of-type {
+    page-break-before: auto;
+    break-before: auto;
+}
+
+h3 {
+    font-size: 12pt;
+    font-weight: 700;
+    color: var(--navy);            /* navy — secondary heading */
+    margin: 22px 0 6px;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+/* ── Orphan prevention: keep headings with their list content ── */
+/* break-before:avoid  → list must start on the same page as its h3    */
+/* break-inside:avoid  → list must not split internally between li rows */
+/* Together: the browser's only valid break point is BEFORE the h3,    */
+/* so the whole heading + list is pushed to the next page as a unit.   */
+h3 + ul, h3 + ol {
+    page-break-before: avoid;
+    break-before: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+h3 + p, h3 + h4 {
+    page-break-before: avoid;
+    break-before: avoid;
+}
+
+h4 {
+    font-size: 10.5pt;
+    font-weight: 600;
+    color: #334155;                /* slate — tertiary heading */
+    margin: 16px 0 5px;
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+h4 + ul, h4 + ol, h4 + p,
+h4 + * + ul, h4 + * + ol, h4 + * + p {
+    page-break-before: avoid;
+    break-before: avoid;
+}
+
+p    { margin: 0 0 9px; orphans: 3; widows: 3; }
+
+/* Proper bullet hierarchy */
+ul            { list-style-type: disc;    margin: 0 0 11px 1.6rem; padding: 0; }
+ul ul         { list-style-type: circle;  margin: 4px 0 6px 1.6rem; }
+ul ul ul      { list-style-type: square; }
+ol            { list-style-type: decimal; margin: 0 0 11px 1.6rem; padding: 0; }
+ol li         { margin-bottom: 7px; }
+ol li > ul    { margin-top: 5px; }
+ol li > p     { margin: 0 0 4px; }
+li            { margin-bottom: 5px; break-inside: avoid; }
+
+strong { font-weight: 700; color: var(--navy); }
+em   { font-style: italic; }
+hr   { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+
+/* ── COMMENTARY BOXES ────────────────────────────────────── */
+.commentary-block {
+    background: #f0f4ff;
+    border-left: 4px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 16px 0 20px;
+    break-inside: avoid;
+}
+
+.commentary-block p { margin: 0 0 6px; font-size: 9.5pt; color: #374151; }
+.commentary-block p:last-child { margin: 0; }
+.commentary-block strong { color: var(--accent); }
+
+/* ── TABLES ─────────────────────────────────────────────── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 9.5pt;
+    break-inside: avoid;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(0,0,0,0.05);
+}
+
+thead tr { background: var(--navy); }
+
+thead th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 8.5pt;
+    color: white;
+    letter-spacing: 0.04em;
+}
+
+tbody tr:nth-child(even) { background: var(--bg); }
+tbody tr:nth-child(odd)  { background: white; }
+
+tbody td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+/* ── IMPACT / EFFORT / CONFIDENCE BADGES ────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.badge-impact-high { background: #fee2e2; color: #dc2626; }
+.badge-impact-med  { background: #fef3c7; color: #d97706; }
+.badge-impact-low  { background: #dcfce7; color: #059669; }
+.badge-effort-s    { background: #dcfce7; color: #059669; }
+.badge-effort-m    { background: #fef3c7; color: #d97706; }
+.badge-effort-l    { background: #fee2e2; color: #dc2626; }
+.badge-conf-high   { background: #ede9fe; color: #7c3aed; }
+.badge-conf-med    { background: #fef3c7; color: #d97706; }
+.badge-conf-low    { background: #f1f5f9; color: #64748b; }
+
+/* ── PAGESPEED SECTION ──────────────────────────────────── */
+.psi-section-label {
+    font-size: 7.5pt;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: -4px 0 14px;
+}
+
+.psi-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin: 0 0 26px;
+}
+
+.psi-card {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    break-inside: avoid;
+}
+
+.psi-card-header {
+    padding: 18px 22px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.psi-strategy { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+.psi-score-row { display: flex; align-items: baseline; gap: 3px; }
+.psi-score-big { font-size: 34pt; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.psi-score-denom { font-size: 11pt; font-weight: 400; color: inherit; opacity: 0.6; }
+
+.psi-status-pill {
+    font-size: 7.5pt;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: white;
+    align-self: flex-start;
+}
+
+.psi-metrics { padding: 4px 22px 16px; background: white; }
+
+.psi-metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 8.5pt;
+}
+
+.psi-metric-row:last-child { border-bottom: none; }
+.psi-metric-name { color: var(--muted); }
+.psi-metric-val  { font-weight: 700; }
+.psi-metric-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+
+
+@page :first {
+    size: A4;
+    margin: 0;
+}
+@page {
+    size: A4;
+    margin: 14mm 18mm 11mm;
+    @bottom-left {
+        content: "CONFIDENTIAL \2014  MARCH 10, 2026";
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        font-size: 7pt;
+        font-weight: 600;
+        color: #64748b;
+        letter-spacing: 0.08em;
+        border-top: 1px solid #e2e8f0;
+        padding: 3mm 0 0 0;
+        width: 50%;
+    }
+    @bottom-right {
+        content: "CRO AUDIT AI";
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+        font-size: 7pt;
+        font-weight: 600;
+        color: #64748b;
+        letter-spacing: 0.08em;
+        border-top: 1px solid #e2e8f0;
+        padding: 3mm 0 0 0;
+        text-align: right;
+        width: 50%;
+    }
+}
+
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ COVER PAGE -->
+<div class="cover">
+  <div class="cover-accent-bar"></div>
+  <div class="cover-body">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+      <div class="cover-eyebrow">Conversion Rate Optimisation</div>
+      <div class="cover-score-badge" style="border-color:#f87171;"><div class="cover-score-number" style="color:#f87171;">4.8</div><div class="cover-score-denom" style="color:#f87171;">/10</div><div class="cover-score-label">CRO Score</div></div>
+    </div>
+    <div class="cover-spacer"></div>
+    <div class="cover-title">CRO Audit<br>Report</div>
+    <div class="cover-subtitle">March 10, 2026</div>
+    <div class="cover-url-card">
+      <div class="cover-url-label">Audited Website</div>
+      <div class="cover-url-value">www.greenhalo.nz</div>
+    </div>
+    <div class="cover-meta-row">
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Report Date</div>
+        <div class="cover-meta-value">March 10, 2026</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Audit Type</div>
+        <div class="cover-meta-value">SaaS</div>
+      </div>
+      <div class="cover-meta-item">
+        <div class="cover-meta-label">Classification</div>
+        <div class="cover-meta-value">Confidential</div>
+      </div>
+    </div>
+  </div>
+  <div class="cover-footer">
+    <div class="cover-footer-brand">CRO Audit AI</div>
+    <div>Prepared March 10, 2026 &mdash; Confidential</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ CONTENTS PAGE -->
+<div class="toc-page"><div class="toc-eyebrow">CRO Audit Report</div><h2 class="toc-heading">Contents</h2><div class="toc-accent"></div><div class="toc-entries"><div class="toc-entry"><span class="toc-num">01</span><span class="toc-name">Performance Metrics</span><span class="toc-cat">Analytics</span></div><div class="toc-entry"><span class="toc-num">02</span><span class="toc-name">Business context</span><span class="toc-cat">Overview</span></div><div class="toc-entry"><span class="toc-num">03</span><span class="toc-name">Funnel map</span><span class="toc-cat">Navigation</span></div><div class="toc-entry"><span class="toc-num">04</span><span class="toc-name">Executive summary</span><span class="toc-cat">Summary</span></div><div class="toc-entry"><span class="toc-num">05</span><span class="toc-name">Conversion scorecard</span><span class="toc-cat">Scoring</span></div><div class="toc-entry"><span class="toc-num">06</span><span class="toc-name">Above-the-fold analysis</span><span class="toc-cat">UX</span></div><div class="toc-entry"><span class="toc-num">07</span><span class="toc-name">Top 7 issues</span><span class="toc-cat">Issues</span></div><div class="toc-entry"><span class="toc-num">08</span><span class="toc-name">Mobile considerations</span><span class="toc-cat">Mobile</span></div><div class="toc-entry"><span class="toc-num">09</span><span class="toc-name">Copy & CTA improvements</span><span class="toc-cat">Copywriting</span></div><div class="toc-entry"><span class="toc-num">10</span><span class="toc-name">Experiment plan</span><span class="toc-cat">Action Plan</span></div></div></div>
+
+<!-- ═══════════════════════════════════════════════════ MAIN CONTENT -->
+<div class="main-content">
+
+<h2>Performance Metrics</h2><p class="psi-section-label">Google Lighthouse &mdash; median of 3 runs per strategy</p><div class="psi-grid"><div class="psi-card"><div class="psi-card-header" style="background:#fef3c7;"><div><div class="psi-strategy" style="color:#d97706;">Mobile</div><div class="psi-score-row"><span class="psi-score-big" style="color:#d97706;">71</span><span class="psi-score-denom" style="color:#d97706;">/100</span></div></div><div class="psi-status-pill" style="background:#d97706;">Needs Work</div></div><div class="psi-metrics"><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#dc2626;"></span><span class="psi-metric-name">Largest Contentful Paint</span></span><span class="psi-metric-val" style="color:#dc2626">4.07 s</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#dc2626;"></span><span class="psi-metric-name">First Contentful Paint</span></span><span class="psi-metric-val" style="color:#dc2626">3.16 s</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">Cumulative Layout Shift</span></span><span class="psi-metric-val" style="color:#059669">0.012</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#d97706;"></span><span class="psi-metric-name">Total Blocking Time</span></span><span class="psi-metric-val" style="color:#d97706">380 ms</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#cbd5e1;"></span><span class="psi-metric-name">Interaction to Next Paint</span></span><span class="psi-metric-val" style="color:#cbd5e1">N/A</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">Time to First Byte</span></span><span class="psi-metric-val" style="color:#059669">47 ms</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">Speed Index</span></span><span class="psi-metric-val" style="color:#059669">3.31 s</span></div></div></div><div class="psi-card"><div class="psi-card-header" style="background:#fef3c7;"><div><div class="psi-strategy" style="color:#d97706;">Desktop</div><div class="psi-score-row"><span class="psi-score-big" style="color:#d97706;">65</span><span class="psi-score-denom" style="color:#d97706;">/100</span></div></div><div class="psi-status-pill" style="background:#d97706;">Needs Work</div></div><div class="psi-metrics"><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#d97706;"></span><span class="psi-metric-name">Largest Contentful Paint</span></span><span class="psi-metric-val" style="color:#d97706">2.99 s</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">First Contentful Paint</span></span><span class="psi-metric-val" style="color:#059669">732 ms</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">Cumulative Layout Shift</span></span><span class="psi-metric-val" style="color:#059669">0.000</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#d97706;"></span><span class="psi-metric-name">Total Blocking Time</span></span><span class="psi-metric-val" style="color:#d97706">331 ms</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#cbd5e1;"></span><span class="psi-metric-name">Interaction to Next Paint</span></span><span class="psi-metric-val" style="color:#cbd5e1">N/A</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">Time to First Byte</span></span><span class="psi-metric-val" style="color:#059669">306 ms</span></div><div class="psi-metric-row"><span style="display:flex;align-items:center;gap:6px;"><span class="psi-metric-dot" style="background:#059669;"></span><span class="psi-metric-name">Speed Index</span></span><span class="psi-metric-val" style="color:#059669">2.11 s</span></div></div></div></div>
+<div class="commentary-block">
+<p><strong>What these metrics measure</strong> &mdash; Google Lighthouse scores every page
+across five dimensions: <em>Performance</em> (raw speed), <em>Accessibility</em>, <em>Best Practices</em>,
+<em>SEO</em>, and <em>Progressive Web App</em>. The scores below focus on <strong>Performance</strong>
+and its Core Web Vitals &mdash; the specific signals Google uses as ranking factors and that
+directly determine whether visitors stay or leave.</p>
+<p><strong>Why it matters for conversion</strong> &mdash; Google research shows a 1-second increase
+in load time reduces conversions by up to <strong>7%</strong> and increases bounce rate by <strong>32%</strong>.
+Pages scoring below 50 typically lose a significant portion of visitors before they see any content.
+Core Web Vitals are also a confirmed Google Search ranking signal &mdash; poor scores harm organic
+traffic as well as on-site conversion.</p>
+<p><strong>LCP</strong> (how fast the main content appears) drives first impressions &mdash; above 4s
+most visitors assume the page is broken. <strong>CLS</strong> (layout shifts) causes mis-clicks on
+CTAs as buttons jump while the page loads. <strong>TBT / INP</strong> measure how responsive the page
+feels to clicks and form inputs &mdash; critical for sign-up and checkout flows. <strong>TTFB</strong>
+is the server&rsquo;s response time and is the foundation every other metric builds on.</p>
+</div>
+
+
+<div class="report-body">
+<h2>0) Business context</h2>
+<p>GreenHalo is an <strong>emissions management / carbon accounting + sustainability reporting SaaS</strong> (positioned as “Calculate Carbon Footprint” and “Sustainability Reporting Software”), likely targeting <strong>mid-market to enterprise</strong> (explicit savings claims for medium/large orgs). Primary conversion goal appears to be <strong>demo/trial → signup</strong> (nav includes “Interactive Demo” and “Get Started” links to app signup).</p>
+<hr />
+<h2>1) Funnel map</h2>
+<p>Pages captured and purpose + primary CTA (Call to Action):</p>
+<p>1) <strong>Homepage</strong> — https://www.greenhalo.nz/<br />
+<strong>Purpose:</strong> Explain product value + drive evaluation.<br />
+<strong>Primary CTAs (Calls to Action) observed:</strong> “Get Started” (links to <code>app.greenhalo.nz/auth/signup</code>), “Interactive Demo” (links to <code>app.greenhalo.nz/auth/demo</code>).</p>
+<p>2) <strong>Pricing page</strong> — https://www.greenhalo.nz/pricing<br />
+<strong>Purpose:</strong> Plan selection + push to signup.<br />
+<strong>Primary CTA observed:</strong> “Get Started” (links to <code>app.greenhalo.nz/auth/signup?subscriptionTier=2</code> and <code>...Tier=3</code>).</p>
+<p>3) <strong>(Text context only) About</strong> — https://www.greenhalo.nz/about<br />
+<strong>Purpose:</strong> Brand story.<br />
+<strong>Primary CTAs observed:</strong> “Interactive Demo” (links to app demo).<br />
+<strong>Above-the-fold not observed in provided content.</strong></p>
+<p>4) <strong>(Text context only) Resource Hub</strong> — https://www.greenhalo.nz/resourcehub<br />
+<strong>Purpose:</strong> Content marketing / education.<br />
+<strong>Primary CTA observed:</strong> “Interactive Demo” (links to app demo).<br />
+<strong>Above-the-fold not observed in provided content.</strong></p>
+<hr />
+<h2>2) Executive summary</h2><div class="exec-summary-card"><ul>
+<li>
+<p><strong>Biggest conversion blocker:</strong> The primary conversion paths are split between <strong>“Interactive Demo” and “Get Started”</strong> without clear guidance on which is best for which buyer (and there’s also a “30 Day Free Trial” email CTA). This creates decision friction at the moment of action.<br />
+<strong>Evidence:</strong> Homepage header shows “Interactive Demo” + “Login” and hero CTAs show “Get Started” + “Interactive Demo”; homepage text context includes <code>mailto:...subject=30 Day Free Trial with GreenHalo</code>.</p>
+</li>
+<li>
+<p><strong>Biggest trust/credibility gap:</strong> <strong>No customer logos, reviews, or case studies detected</strong> in text context; only an awards-style image appears. For a data-heavy ESG/carbon platform, missing trust proof (security/compliance/integrations) will likely suppress demo/trial starts.<br />
+<strong>Evidence:</strong> SOCIAL PROOF: “None detected” on homepage/pricing/about/resourcehub; TRUST SIGNALS include an image alt: “nz project management conference &amp; awards1.png”.</p>
+</li>
+<li>
+<p><strong>Biggest messaging/positioning gap:</strong> Above the fold, value prop is directionally clear (“Take the guesswork out of calculating your carbon footprint”), but <strong>differentiation vs other carbon accounting tools is not explicit</strong> in the first impression (e.g., what’s uniquely automated, what standards, what exports besides Toitū).<br />
+<strong>Evidence:</strong> Homepage hero headline: “Take the guesswork out of calculating your carbon footprint.” Subhead references “automatic draw…”, but no concrete differentiator statement is visible above the fold beyond that.</p>
+</li>
+<li>
+<p><strong>Biggest friction point:</strong> <strong>Mobile performance is at the “Poor” threshold for LCP (Largest Contentful Paint)</strong> (4.07s), which is a concrete conversion risk (slower first meaningful view → higher bounce, fewer CTA clicks).<br />
+<strong>Evidence (PageSpeed):</strong> Mobile LCP <strong>4.07s</strong> (Poor &gt;4s), Mobile FCP (First Contentful Paint) <strong>3.16s</strong> (Poor &gt;3s).</p>
+</li>
+<li>
+<p><strong>Highest-impact quick win:</strong> <strong>Unify to one primary CTA</strong> per page (and consistent labeling across homepage + pricing) with microcopy like “No credit card required” (if true—otherwise don’t claim). At minimum, add <strong>clarifying decision copy</strong> (“Start with the interactive demo” vs “Create your account”).<br />
+<strong>Evidence:</strong> Homepage shows two hero CTAs (“Get Started” + “Interactive Demo”). Pricing shows “Get Started.”</p>
+</li>
+<li>
+<p><strong>CTA consistency verdict:</strong> <strong>Inconsistent.</strong> Homepage promotes “Get Started” + “Interactive Demo,” while elsewhere “30 Day Free Trial” appears only via a <strong>mailto</strong> “Contact Us” CTA in text context; pricing is strictly “Get Started.”<br />
+<strong>Evidence:</strong> Homepage CTAs list includes <code>Contact Us -&gt; mailto:...subject=30 Day Free Trial...</code>; pricing page CTAs list includes “Get Started” tier links; header includes “Interactive Demo”.</p>
+</li>
+</ul>
+<hr /></div><h2>3) Conversion scorecard</h2>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th style="text-align: right;">Score /10</th>
+<th style="text-align: right;">Weight</th>
+<th style="text-align: right;">Weighted</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Value prop &amp; differentiation</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">2×</td>
+<td style="text-align: right;">12</td>
+</tr>
+<tr>
+<td>Trial / demo CTA clarity</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">2×</td>
+<td style="text-align: right;">10</td>
+</tr>
+<tr>
+<td>Pricing plan clarity</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1.5×</td>
+<td style="text-align: right;">9</td>
+</tr>
+<tr>
+<td>Trust &amp; social proof (logos, case studies, reviews)</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">1.5×</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr>
+<td>Signup / onboarding friction</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">1×</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td>Feature communication</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1×</td>
+<td style="text-align: right;">6</td>
+</tr>
+<tr>
+<td>Mobile experience</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">1×</td>
+<td style="text-align: right;">4</td>
+</tr>
+</tbody>
+</table>
+<p>Overall score = sum(weighted) / 10 = <strong>4.8 / 10</strong></p>
+<p>Rationales (one line each):
+- <strong>Value prop &amp; differentiation (6/10):</strong> Clear problem (“calculating your carbon footprint”), but limited above-fold unique proof.</p><ul><li><strong>Trial/demo CTA clarity (5/10):</strong> Multiple action paths (“Get Started”, “Interactive Demo”, “Contact Us” trial email) with no routing logic.</li><li><strong>Pricing clarity (6/10):</strong> Prices and feature bullets are visible, but plan comparison logic and inclusions (sites, storage) are dense.</li><li><strong>Trust &amp; social proof (2/10):</strong> “None detected” social proof; minimal trust evidence beyond an awards image.</li><li><strong>Signup friction (4/10):</strong> “Get Started” sends to app signup, but signup steps/requirements are <strong>Not observed in provided content.</strong></li><li><strong>Feature communication (6/10):</strong> Many features listed; needs stronger prioritization and buyer-based outcomes.</li><li><strong>Mobile experience (4/10):</strong> Mobile LCP is Poor (4.07s) and FCP is Poor (3.16s), risking drop-offs before CTA view/interaction.</li></ul>
+<hr />
+<h2>4) Above-the-fold analysis</h2>
+<h3>A) Homepage (desktop-above-fold) — https://www.greenhalo.nz/</h3>
+<p><strong>What’s visible above the fold (from screenshot):</strong>
+- Top nav with “About, Contact, FAQs, Resource Hub, Pricing,” plus a prominent <strong>“Interactive Demo”</strong> button and “Login”.
+- Hero headline: <strong>“Take the guesswork out of calculating your carbon footprint.”</strong>
+- Two hero CTAs: <strong>“Get Started”</strong> and <strong>“Interactive Demo”</strong>
+- A hero illustration (trees).</p>
+<p><strong>Clarity &amp; gaps:</strong>
+- Value prop is clear at a high level, but <strong>what makes GreenHalo different</strong> is not explicit above fold (beyond “guesswork out”).</p><ul><li>Two CTAs are visible but <strong>no guidance</strong> which to choose (trial vs demo vs talk to sales).</li><li>Trust signals above fold: <strong>Not observed in provided content</strong> (logos/reviews/security badges not visible above fold).</li></ul>
+<h3>B) Pricing page (desktop) — https://www.greenhalo.nz/pricing</h3>
+<p><strong>What’s visible above the fold (from screenshot):</strong>
+- Headline: <strong>“Choose Your Plan”</strong> with descriptive paragraph.
+- Two pricing cards visible:</p><ul><li>“Small Business $149 + GST / month”</li><li>“Pro $999 + GST / month”
+- Each plan has feature bullets and a <strong>“Get Started”</strong> button.</li></ul>
+<p><strong>Clarity &amp; gaps:</strong>
+- Pricing is visible immediately (good), but the <strong>comparison is mostly long bullet lists</strong>; key differences aren’t visually prioritized.</p><ul><li>No trust reassurance near purchase decision above fold (e.g., onboarding help, support, data security): <strong>Not observed in provided content</strong> above fold.</li></ul>
+<h3>C) Homepage (mobile viewport 390px) — https://www.greenhalo.nz/</h3>
+<p><strong>What’s visible above the fold (from screenshot):</strong>
+- Hamburger menu, logo.
+- Same hero headline.
+- The hero CTAs appear lower; above-fold shows a cookie banner overlay (“Accept”) and “We’re an ESG Award Finalist!” block appears early in the scroll.</p>
+<p><strong>Clarity &amp; gaps:</strong>
+- Cookie banner may compete with CTA visibility on small screens.<br />
+<strong>Evidence:</strong> Mobile screenshot shows cookie prompt overlay with “Accept”.
+- Mobile speed risk (LCP 4.07s) may delay hero content/CTAs.</p>
+<h3>D) Pricing page (mobile) — https://www.greenhalo.nz/pricing</h3>
+<p><strong>What’s visible above the fold (from screenshot):</strong>
+- “Choose Your Plan” headline and paragraph.
+- “Pro $999 + GST / month” plan begins with bullets; “Small Business” is below.</p>
+<p><strong>Clarity &amp; gaps:</strong>
+- On mobile, users see one plan at a time; it’s harder to compare quickly.</p><ul><li>Potential risk of “which plan is right?” because “Pro” appears first without a selector or comparison summary above fold (as seen).</li></ul>
+<hr />
+<h2>5) Top 7 issues</h2>
+<h3>1) Confusing conversion path: demo vs signup vs “30 Day Free Trial” contact email are not unified</h3>
+<ul>
+<li><strong>Impact:</strong> High  </li>
+<li><strong>Effort:</strong> S  </li>
+<li><strong>Confidence:</strong> High  </li>
+<li><strong>Evidence:</strong>  </li>
+<li>Homepage hero shows <strong>two CTAs</strong>: “Get Started” and “Interactive Demo” (hero area).  </li>
+<li>Text context CTAs include <code>Contact Us -&gt; mailto:info@greenhalo.nz?subject=30 Day Free Trial with GreenHalo</code>.  </li>
+<li>Pricing page uses <strong>“Get Started”</strong> only (pricing cards).</li>
+<li><strong>Recommendation:</strong> Choose a primary path per ICP:  </li>
+<li>For mid-market/enterprise: make <strong>“Book a demo”</strong> (or “Interactive Demo”) primary, with “Start trial” secondary.  </li>
+<li>For self-serve SMB: make <strong>“Start free trial”</strong> primary, with “View interactive demo” secondary.<br />
+  Add one line under CTAs explaining the difference (e.g., “Interactive demo: no setup. Start trial: connect your data.”).</li>
+<li><strong>Test idea:</strong> Hypothesis → A clarified primary CTA + decision microcopy increases demo/trial starts.  </li>
+<li><strong>Primary metric:</strong> Demo starts (clicks to <code>/auth/demo</code>) + signup starts (clicks to <code>/auth/signup</code>)  </li>
+<li><strong>Guardrail:</strong> Contact form submissions (don’t cannibalize if valuable)  </li>
+<li><strong>MDE (Minimum Detectable Effect):</strong> +10–15% increase in combined demo+signup starts</li>
+</ul>
+<hr />
+<h3>2) Weak social proof for a high-trust, data-heavy SaaS category</h3>
+<ul>
+<li><strong>Impact:</strong> High  </li>
+<li><strong>Effort:</strong> M  </li>
+<li><strong>Confidence:</strong> High  </li>
+<li><strong>Evidence:</strong> SOCIAL PROOF shows “None detected” on homepage and pricing page; no customer logos/reviews visible in screenshots. One trust image appears: “We’re an ESG Award Finalist!” (homepage section below hero).</li>
+<li><strong>Recommendation:</strong> Add a proof block near the hero and again on pricing:  </li>
+<li>Customer logos row (if available), 1–2 quantified outcomes (e.g., time saved, audit readiness), and 1 testimonial with name/company (if permissible).  </li>
+<li>If you can’t use logos, add “Used by sustainability teams at…” with sectors, or anonymized proof.</li>
+<li><strong>Test idea:</strong>  </li>
+<li><strong>Hypothesis:</strong> Adding recognizable proof near CTA increases CTA clicks.  </li>
+<li><strong>Primary metric:</strong> Hero CTA CTR (Click-Through Rate) to demo/signup  </li>
+<li><strong>Guardrail:</strong> Bounce rate  </li>
+<li><strong>MDE:</strong> +8–12% CTR lift</li>
+</ul>
+<hr />
+<h3>3) Mobile Core Web Vital: LCP is “Poor” (4.07s), likely increasing bounce before CTAs engage</h3>
+<ul>
+<li><strong>Impact:</strong> High  </li>
+<li><strong>Effort:</strong> M/L  </li>
+<li><strong>Confidence:</strong> High  </li>
+<li><strong>Evidence (PageSpeed):</strong> Mobile LCP <strong>4.07s</strong> (Poor &gt;4s), FCP <strong>3.16s</strong> (Poor &gt;3s).</li>
+<li><strong>Recommendation:</strong> Prioritize largest above-fold assets:  </li>
+<li>Compress/optimize hero imagery (trees illustration), ensure critical CSS, defer non-critical scripts.  </li>
+<li>Confirm the LCP element (likely hero area) and optimize it first.</li>
+<li><strong>Test idea:</strong>  </li>
+<li><strong>Hypothesis:</strong> Improving mobile LCP below 3.0s increases demo/signup starts.  </li>
+<li><strong>Primary metric:</strong> Mobile CTA CTR + demo/signup starts per session  </li>
+<li><strong>Guardrail:</strong> Mobile bounce rate  </li>
+<li><strong>MDE:</strong> +5–10% improvement in mobile conversion rate</li>
+</ul>
+<hr />
+<h3>4) Pricing page lacks “decision support” (who each plan is for) above the fold</h3>
+<ul>
+<li><strong>Impact:</strong> Med/High  </li>
+<li><strong>Effort:</strong> S/M  </li>
+<li><strong>Confidence:</strong> High  </li>
+<li><strong>Evidence:</strong> Pricing shows “Small Business” and “Pro” with long bullet lists; no visible “Best for…” labels or usage-based guidance in the above-fold pricing cards (desktop screenshot).</li>
+<li><strong>Recommendation:</strong> Add 1-line qualifiers under plan names:  </li>
+<li>“Small Business — best for 1 site / light automation” (align to actual inclusions shown: “One location/site included”).  </li>
+<li>“Pro — best for multi-site reporting + data insights” (align to bullets).<br />
+  Also add a short “Need more than X sites? Contact us” link near buttons (you already mention more sites in bullets).</li>
+<li><strong>Test idea:</strong>  </li>
+<li><strong>Hypothesis:</strong> Adding plan fit labels increases “Get Started” clicks.  </li>
+<li><strong>Primary metric:</strong> Pricing → signup CTR  </li>
+<li><strong>Guardrail:</strong> Pricing page exit rate  </li>
+<li><strong>MDE:</strong> +10% CTR lift</li>
+</ul>
+<hr />
+<h3>5) Feature differentiation is buried in dense bullet lists</h3>
+<ul>
+<li><strong>Impact:</strong> Med  </li>
+<li><strong>Effort:</strong> M  </li>
+<li><strong>Confidence:</strong> High  </li>
+<li><strong>Evidence:</strong> Pricing plans contain many bullets (e.g., “Automated data feeds…”, “Audit document storage…”, “Live carbon price…”) and mobile view shows a long list before the next plan appears.</li>
+<li><strong>Recommendation:</strong> Convert bullets into 5–7 “headline features” with icons + expandable “All features” section. Prioritize differentiators like “Automated Toitū Envirocare export” and “Automated data feeds” into a “Why GreenHalo” comparison row.</li>
+<li><strong>Test idea:</strong>  </li>
+<li><strong>Hypothesis:</strong> Scannable plan cards improve engagement and clicks.  </li>
+<li><strong>Primary metric:</strong> Scroll depth to CTAs + “Get Started” clicks  </li>
+<li><strong>Guardrail:</strong> Time on page (don’t inflate without clicks)  </li>
+<li><strong>MDE:</strong> +8% “Get Started” clicks</li>
+</ul>
+<hr />
+<h3>6) Contact form CTA label “Send” is non-specific and appears as a primary action in multiple pages</h3>
+<ul>
+<li><strong>Impact:</strong> Med  </li>
+<li><strong>Effort:</strong> S  </li>
+<li><strong>Confidence:</strong> High  </li>
+<li><strong>Evidence:</strong> CTAs list includes <code>BUTTON: Send</code> on homepage and pricing; screenshots show a “Get in Touch” form with a <strong>Send</strong> button (footer section).</li>
+<li><strong>Recommendation:</strong> Change button to intent-based labels:  </li>
+<li>“Request a demo” / “Ask a question” / “Talk to sales” (choose one consistent with page intent).<br />
+  Add expectation microcopy (e.g., “We’ll reply within 1 business day.”) if true (otherwise don’t claim).</li>
+<li><strong>Test idea:</strong>  </li>
+<li><strong>Hypothesis:</strong> Specific form CTA increases form completion rate.  </li>
+<li><strong>Primary metric:</strong> Form submissions / form views  </li>
+<li><strong>Guardrail:</strong> Spam rate / low-quality leads (if tracked)  </li>
+<li><strong>MDE:</strong> +10% form submissions</li>
+</ul>
+<hr />
+<h3>7) Missing security/privacy reassurance near conversion moments</h3>
+<ul>
+<li><strong>Impact:</strong> Med  </li>
+<li><strong>Effort:</strong> S/M  </li>
+<li><strong>Confidence:</strong> Med  </li>
+<li><strong>Evidence:</strong> Trust signals listed only as phone number and an awards image; no security/compliance statements are shown in provided text/screenshots.<br />
+<strong>Security badges/claims:</strong> Not observed in provided content.</li>
+<li><strong>Recommendation:</strong> Add a lightweight trust row near primary CTAs: “Data security”, “Privacy”, “Audit-ready reporting” with links to relevant pages (if they exist). If you have Toitū export prominently, add a short line clarifying what that means for auditors (without overclaiming).</li>
+<li><strong>Test idea:</strong>  </li>
+<li><strong>Hypothesis:</strong> Trust microcopy near CTAs reduces hesitation and increases clicks.  </li>
+<li><strong>Primary metric:</strong> CTA CTR to demo/signup  </li>
+<li><strong>Guardrail:</strong> Bounce rate  </li>
+<li><strong>MDE:</strong> +5–8% CTR lift</li>
+</ul>
+<hr />
+<h2>6) Mobile considerations</h2>
+<p>1) <strong>Poor mobile LCP (4.07s)</strong> likely delays first meaningful content/CTAs on 4G, increasing bounce.<br />
+<strong>Evidence:</strong> PageSpeed mobile LCP 4.07s; FCP 3.16s.</p>
+<p>2) <strong>Plan comparison difficulty on mobile</strong> (one long plan card at a time).<br />
+<strong>Evidence:</strong> Mobile pricing screenshot shows “Pro” plan bullets filling screen; “Small Business” appears later.</p>
+<p>3) <strong>Cookie banner competes with hero visibility</strong> on small screens.<br />
+<strong>Evidence:</strong> Mobile homepage screenshot shows cookie prompt overlay with “Accept”.</p>
+<p>4) <strong>Tap target clarity for primary action</strong>: On mobile homepage above fold, primary CTAs are not clearly visible in the very first view due to content stacking/overlays (based on screenshot).<br />
+<strong>Evidence:</strong> Mobile homepage shows headline + overlay; CTAs appear lower in the page.</p>
+<p>5) <strong>Floating chat/help button overlaps content risk</strong> (present on pricing desktop screenshot as a floating icon).<br />
+<strong>Evidence:</strong> Desktop pricing screenshot shows a floating circular icon on the right side; on mobile this can obscure CTAs if not managed. (Mobile overlap <strong>not observed</strong>.)</p>
+<hr />
+<h2>7) Copy &amp; CTA improvements</h2>
+<h3>3 headline/value prop options</h3>
+<p>1) <strong>“Automate carbon accounting and sustainability reporting—without the spreadsheet chaos.”</strong><br />
+   Rationale: Mirrors the “spreadsheets” pain from About page story and positions automation.</p>
+<p>2) <strong>“Get audit-ready emissions data fast: measure, track, and report with automated data feeds.”</strong><br />
+   Rationale: Pulls from homepage/meta (“Automatically draw your emissions data… measure, track, and report”).</p>
+<p>3) <strong>“Carbon footprint tracking for NZ organisations—built to streamline data collection and reporting.”</strong><br />
+   Rationale: Matches the NZ focus (“designed for New Zealand organisations”) and emphasizes workflow outcome.</p>
+<h3>3 primary CTA label options</h3>
+<ul>
+<li><strong>“Start your free trial”</strong> (use only if trial is truly self-serve; trial details are not fully confirmed in provided content)  </li>
+<li><strong>“Try the interactive demo”</strong>  </li>
+<li><strong>“Create your account”</strong></li>
+</ul>
+<h3>3 trust microcopy examples</h3>
+<ul>
+<li><strong>“See how GreenHalo pulls data automatically (where available).”</strong> (aligns to pricing feature text)  </li>
+<li><strong>“Includes tailored onboarding options (3 hours free onboarding on Pro).”</strong> (aligns to pricing text: “Three hours free on-boarding”)  </li>
+<li><strong>“Questions before you start? Contact our team.”</strong> (aligns to phone number + contact form presence)</li>
+</ul>
+<hr />
+<h2>8) Experiment plan</h2>
+<h3>Week 1 — 2 quick wins</h3>
+<p><strong>Test 1: CTA routing + labels (Homepage hero)</strong>
+- <strong>Hypothesis:</strong> If we clarify the primary action (choose one: demo or get started) and add a one-line “which to choose,” more visitors will start a demo/signup.</p><ul><li><strong>Primary metric:</strong> Combined clicks to <code>/auth/demo</code> + <code>/auth/signup</code> (per session)</li><li><strong>Guardrail metric:</strong> Bounce rate</li><li><strong>MDE:</strong> 10%</li></ul>
+<p><strong>Test 2: Contact form CTA label + expectation microcopy</strong>
+- <strong>Hypothesis:</strong> Replacing “Send” with intent-specific copy (e.g., “Request a demo”) increases form submissions.</p><ul><li><strong>Primary metric:</strong> Form submit rate</li><li><strong>Guardrail metric:</strong> Form abandonment rate (or time to complete)</li><li><strong>MDE:</strong> 10–15%</li></ul>
+<h3>Week 2 — 2 bigger tests</h3>
+<p><strong>Test 3: Pricing page “Best for” + key differences module</strong>
+- <strong>Hypothesis:</strong> Adding “Best for” labels + a short comparison (sites included, storage, onboarding, key differentiators) increases “Get Started” CTR.</p><ul><li><strong>Primary metric:</strong> Pricing → signup click-through rate</li><li><strong>Guardrail metric:</strong> Pricing page exits</li><li><strong>MDE:</strong> 10%</li></ul>
+<p><strong>Test 4: Add social proof block near hero and on pricing</strong>
+- <strong>Hypothesis:</strong> Adding credible proof (logos/testimonial/quantified outcome) reduces perceived risk and increases demo/signup starts.</p><ul><li><strong>Primary metric:</strong> Demo/signup starts</li><li><strong>Guardrail metric:</strong> Bounce rate</li><li><strong>MDE:</strong> 8–12%</li></ul>
+<hr />
+<p>If you can share screenshots of the <strong>actual app signup flow</strong> (<code>/auth/signup</code>) and demo (<code>/auth/demo</code>), I can audit the highest-leverage point (field friction, step count, SSO options, error handling, and whether pricing promises match the signup experience).</p>
+</div>
+
+
+</div>
+
+</body>
+</html>
