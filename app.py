@@ -1597,6 +1597,19 @@ def render_pagespeed(raw: dict):
                 unsafe_allow_html=True,
             )
 
+            if score is None:
+                st.markdown(
+                    '<div style="font-size:0.72rem;color:#b45309;background:#fef3c7;'
+                    'border-radius:4px;padding:0.4rem 0.6rem;margin-bottom:0.75rem;'
+                    'line-height:1.4;">'
+                    '<strong>Why N/A?</strong> Lighthouse could not paint any content. '
+                    'Common causes: a full-screen overlay or modal blocking rendering, '
+                    'JavaScript errors preventing page load, or a bot-detection block. '
+                    'Individual metrics that did complete are still shown below.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
             # ── Contributing metrics (custom HTML for precise ? alignment) ──
             rows = []
             for key, num_key, display_key in [
